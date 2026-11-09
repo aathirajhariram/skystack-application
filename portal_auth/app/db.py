@@ -1,5 +1,7 @@
 """SQL access with Microsoft Entra tokens (managed identity) - no SQL passwords in the API."""
+import logging
 import struct
+import time
 from contextlib import contextmanager
 from typing import Any, List, Optional, Sequence
 
@@ -17,12 +19,29 @@ def _token_attrs() -> dict:
     return {_SQL_COPT_SS_ACCESS_TOKEN: struct.pack(f"<I{len(raw)}s", len(raw), raw)}
 
 
+log = logging.getLogger("skystack.db")
+
+
+def _open(server: str, database: str):
+    """Opens a connection. A paused or just-started Azure SQL database can need up to a minute to wake up
+    (login timeout HYT00 / error 40613), so wait longer and retry a few times before giving up."""
+    last = None
+    for attempt in range(1, 4):
+        try:
+            return pyodbc.connect(
+                f"Driver={{ODBC Driver 18 for SQL Server}};Server=tcp:{server},1433;Database={database};"
+                "Encrypt=yes;TrustServerCertificate=no;Connection Timeout=60",
+                attrs_before=_token_attrs(), autocommit=True)
+        except pyodbc.OperationalError as exc:
+            last = exc
+            log.warning("SQL connect attempt %d failed: %s", attempt, exc)
+            time.sleep(3 * attempt)
+    raise last
+
+
 @contextmanager
 def connect(server: str, database: str):
-    conn = pyodbc.connect(
-        f"Driver={{ODBC Driver 18 for SQL Server}};Server=tcp:{server},1433;Database={database};"
-        "Encrypt=yes;TrustServerCertificate=no;Connection Timeout=15",
-        attrs_before=_token_attrs(), autocommit=True)
+    conn = _open(server, database)
     try:
         yield conn
     finally:
