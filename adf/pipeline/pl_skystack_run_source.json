@@ -1,0 +1,142 @@
+{
+  "name": "pl_skystack_run_source",
+  "properties": {
+    "description": "Runs the framework for ONE source: StartRun -> Databricks notebook -> EndRun / FailRun.",
+    "parameters": {
+      "SourceId": {
+        "type": "int"
+      }
+    },
+    "activities": [
+      {
+        "name": "StartRun",
+        "type": "Lookup",
+        "typeProperties": {
+          "source": {
+            "type": "AzureSqlSource",
+            "sqlReaderQuery": {
+              "value": "EXEC audit.usp_StartRun @SourceId = @{pipeline().parameters.SourceId}, @TriggeredBy = '@{pipeline().RunId}'",
+              "type": "Expression"
+            }
+          },
+          "dataset": {
+            "referenceName": "ds_control_sql",
+            "type": "DatasetReference"
+          },
+          "firstRowOnly": true
+        }
+      },
+      {
+        "name": "RunNotebook",
+        "type": "DatabricksNotebook",
+        "dependsOn": [
+          {
+            "activity": "StartRun",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "policy": {
+          "timeout": "0.04:00:00",
+          "retry": 0
+        },
+        "typeProperties": {
+          "notebookPath": "/Repos/skystack/skystack-platform/databricks/notebooks/run_pipeline",
+          "baseParameters": {
+            "source_id": {
+              "value": "@string(pipeline().parameters.SourceId)",
+              "type": "Expression"
+            },
+            "run_id": {
+              "value": "@activity('StartRun').output.firstRow.RunId",
+              "type": "Expression"
+            }
+          }
+        },
+        "linkedServiceName": {
+          "referenceName": "ls_databricks",
+          "type": "LinkedServiceReference"
+        }
+      },
+      {
+        "name": "EndRun",
+        "type": "SqlServerStoredProcedure",
+        "dependsOn": [
+          {
+            "activity": "RunNotebook",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "typeProperties": {
+          "storedProcedureName": "audit.usp_EndRun",
+          "storedProcedureParameters": {
+            "RunId": {
+              "value": "@activity('StartRun').output.firstRow.RunId",
+              "type": "Guid"
+            },
+            "Status": {
+              "value": "@json(activity('RunNotebook').output.runOutput).status",
+              "type": "String"
+            },
+            "RowsRead": {
+              "value": "@json(activity('RunNotebook').output.runOutput).rows_read",
+              "type": "Int64"
+            },
+            "RowsValid": {
+              "value": "@json(activity('RunNotebook').output.runOutput).rows_valid",
+              "type": "Int64"
+            },
+            "RowsRejected": {
+              "value": "@json(activity('RunNotebook').output.runOutput).rows_rejected",
+              "type": "Int64"
+            },
+            "RowsLoaded": {
+              "value": "@json(activity('RunNotebook').output.runOutput).rows_loaded",
+              "type": "Int64"
+            },
+            "Message": {
+              "value": "@json(activity('RunNotebook').output.runOutput).message",
+              "type": "String"
+            }
+          }
+        },
+        "linkedServiceName": {
+          "referenceName": "ls_control_sql",
+          "type": "LinkedServiceReference"
+        }
+      },
+      {
+        "name": "FailRun",
+        "type": "SqlServerStoredProcedure",
+        "dependsOn": [
+          {
+            "activity": "RunNotebook",
+            "dependencyConditions": [
+              "Failed"
+            ]
+          }
+        ],
+        "typeProperties": {
+          "storedProcedureName": "audit.usp_FailRun",
+          "storedProcedureParameters": {
+            "RunId": {
+              "value": "@activity('StartRun').output.firstRow.RunId",
+              "type": "Guid"
+            },
+            "Message": {
+              "value": "@activity('RunNotebook').error.message",
+              "type": "String"
+            }
+          }
+        },
+        "linkedServiceName": {
+          "referenceName": "ls_control_sql",
+          "type": "LinkedServiceReference"
+        }
+      }
+    ]
+  }
+}

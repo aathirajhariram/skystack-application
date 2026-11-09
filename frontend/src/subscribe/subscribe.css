@@ -1,0 +1,46 @@
+/* Matches the SkyStack site: white surfaces, navy text (#10283f), blue accent (#246b98). */
+.sub-backdrop { position: fixed; inset: 0; z-index: 1000; background: rgba(16,40,63,.6); backdrop-filter: blur(3px); display: grid; place-items: center; padding: 16px; overflow-y: auto; }
+.sub-dialog { position: relative; width: 100%; max-height: calc(100vh - 32px); overflow-y: auto; background: #fff; color: #172b3d; border-radius: 24px; padding: 38px 32px 28px; box-shadow: 0 30px 80px rgba(16,40,63,.4); }
+.sub-wide { max-width: 1040px; }
+.sub-narrow { max-width: 520px; }
+.sub-close { position: absolute; top: 16px; right: 16px; border: 0; background: #eef3f6; width: 34px; height: 34px; border-radius: 50%; cursor: pointer; display: grid; place-items: center; color: #35516a; }
+.sub-close:hover { background: #dfe8ee; }
+.sub-dialog h2 { margin: 0 0 6px; font-size: 28px; font-weight: 700; color: #10283f; font-family: var(--serif, Georgia, serif); }
+.sub-title-center, .sub-center { text-align: center; }
+.sub-lead, .sub-muted { color: #5f7080; font-size: 13.5px; margin: 0; }
+.sub-foot { display: block; margin-top: 22px; }
+.sub-plans { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin-top: 28px; }
+.sub-plan { position: relative; display: flex; flex-direction: column; gap: 14px; background: #fff; border: 1.5px solid #dce5eb; border-radius: 20px; padding: 24px 22px 26px; transition: box-shadow .15s, border-color .15s; }
+.sub-plan:hover { border-color: #8fb5cc; box-shadow: 0 10px 28px rgba(16,40,63,.08); }
+.sub-plan.recommended { border-color: #246b98; background: linear-gradient(180deg, #eef6fb 0%, #ffffff 60%); box-shadow: 0 0 0 3px #246b9820; }
+.sub-plan header { min-height: 34px; display: flex; justify-content: space-between; align-items: center; }
+.sub-plan h3 { margin: 0; font-size: 17px; font-weight: 700; color: #10283f; }
+.sub-badge { background: #246b98; color: #fff; font-size: 10.5px; font-style: normal; font-weight: 700; letter-spacing: .06em; padding: 6px 12px; border-radius: 999px; }
+.sub-plan-title { margin: 0; font-size: 14.5px; color: #5f7080; min-height: 40px; }
+.sub-cta { display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 100%; border-radius: 999px; font: inherit; font-size: 14.5px; font-weight: 600; padding: 14px 18px; cursor: pointer; border: 1.5px solid transparent; transition: background .15s, color .15s; }
+.sub-cta-primary { background: #246b98; color: #fff; }
+.sub-cta-primary:hover { background: #1d5b84; }
+.sub-cta-outline { background: #fff; color: #10283f; border-color: #10283f; }
+.sub-cta-outline:hover { background: #10283f; color: #fff; }
+.sub-cta:disabled { opacity: .55; cursor: not-allowed; }
+.sub-price { font-size: 42px; font-weight: 700; color: #10283f; line-height: 1; margin-top: 4px; font-family: var(--serif, Georgia, serif); }
+.sub-price sup { font-size: 18px; vertical-align: top; margin-right: 2px; position: relative; top: 4px; }
+.sub-price small { font-size: 13px; color: #5f7080; font-weight: 400; font-family: "DM Sans", sans-serif; }
+.sub-plan ul { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 14px; font-size: 14px; color: #21384b; }
+.sub-plan li { display: flex; gap: 12px; align-items: flex-start; line-height: 1.35; }
+.sub-plan li svg { flex: none; margin-top: 1px; color: #246b98; }
+.sub-back { background: none; border: 0; color: #5f7080; font: inherit; font-size: 13px; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; padding: 0; margin-bottom: 14px; }
+.sub-back:hover { color: #10283f; }
+.sub-fields { display: grid; gap: 14px; margin-top: 20px; }
+.sub-fields label { display: grid; gap: 6px; font-size: 12.5px; font-weight: 600; color: #21384b; }
+.sub-fields input, .sub-fields select { border: 1px solid #dce5eb; border-radius: 10px; padding: 13px 14px; font-size: 14px; background: #fff; color: #21384b; font-family: inherit; }
+.sub-fields input:focus, .sub-fields select:focus { outline: none; border-color: #4a8bb0; box-shadow: 0 0 0 3px #2a719920; }
+.sub-hp { position: absolute !important; left: -9999px; width: 1px; height: 1px; opacity: 0; }
+.sub-submit { margin: 20px 0 10px; }
+.sub-error { color: #b00020; font-size: 13px; margin: 12px 0 0; }
+.sub-done { text-align: center; padding: 20px 8px; display: grid; gap: 14px; justify-items: center; }
+.sub-done p { max-width: 400px; color: #35516a; font-size: 14px; margin: 0; }
+.sub-done .sub-cta { max-width: 220px; }
+.sub-done-icon { width: 54px; height: 54px; border-radius: 50%; background: #e3f4ea; color: #1b7a43; display: grid; place-items: center; }
+@media (max-width: 900px) { .sub-plans { grid-template-columns: 1fr; } .sub-plan-title { min-height: 0; } }
+@media (max-width: 560px) { .sub-dialog { padding: 30px 16px 20px; border-radius: 20px; } }

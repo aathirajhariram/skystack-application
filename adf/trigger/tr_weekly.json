@@ -1,0 +1,31 @@
+{
+  "name": "tr_weekly",
+  "properties": {
+    "type": "ScheduleTrigger",
+    "runtimeState": "Stopped",
+    "typeProperties": {
+      "recurrence": {
+        "frequency": "Week",
+        "interval": 1,
+        "startTime": "2026-01-05T02:30:00Z",
+        "timeZone": "UTC",
+        "schedule": {
+          "weekDays": [
+            "Monday"
+          ]
+        }
+      }
+    },
+    "pipelines": [
+      {
+        "pipelineReference": {
+          "referenceName": "pl_skystack_ingest_scheduled",
+          "type": "PipelineReference"
+        },
+        "parameters": {
+          "ScheduleGroup": "WEEKLY"
+        }
+      }
+    ]
+  }
+}

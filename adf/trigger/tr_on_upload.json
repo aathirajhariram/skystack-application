@@ -1,0 +1,27 @@
+{
+  "name": "tr_on_upload",
+  "properties": {
+    "type": "BlobEventsTrigger",
+    "runtimeState": "Stopped",
+    "typeProperties": {
+      "blobPathBeginsWith": "/landing/blobs/",
+      "ignoreEmptyBlobs": true,
+      "events": [
+        "Microsoft.Storage.BlobCreated"
+      ],
+      "scope": "/subscriptions/<subscription-id>/resourceGroups/<rg>/providers/Microsoft.Storage/storageAccounts/<storage-account>"
+    },
+    "pipelines": [
+      {
+        "pipelineReference": {
+          "referenceName": "pl_skystack_ingest_on_upload",
+          "type": "PipelineReference"
+        },
+        "parameters": {
+          "ClientCode": "@split(triggerBody().folderPath, '/')[1]",
+          "SourceName": "@split(triggerBody().folderPath, '/')[2]"
+        }
+      }
+    ]
+  }
+}

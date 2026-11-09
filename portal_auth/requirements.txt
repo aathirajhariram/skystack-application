@@ -1,0 +1,12 @@
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pydantic-settings>=2.4
+python-multipart>=0.0.9
+pyodbc>=5.1
+azure-identity>=1.17
+azure-keyvault-secrets>=4.8
+azure-storage-file-datalake>=12.16
+azure-mgmt-sql>=4.0.0b17
+argon2-cffi>=23.1
+PyJWT[crypto]>=2.9
+stripe>=10.0

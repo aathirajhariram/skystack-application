@@ -1,0 +1,82 @@
+{
+  "name": "pl_skystack_ingest_on_upload",
+  "properties": {
+    "description": "Fires when a file lands in landing/<client>/<source>/. Waits 30s so multi-file uploads run once.",
+    "concurrency": 1,
+    "parameters": {
+      "ClientCode": {
+        "type": "string"
+      },
+      "SourceName": {
+        "type": "string"
+      }
+    },
+    "activities": [
+      {
+        "name": "WaitForBatch",
+        "type": "Wait",
+        "typeProperties": {
+          "waitTimeInSeconds": 30
+        }
+      },
+      {
+        "name": "LookupSource",
+        "type": "Lookup",
+        "dependsOn": [
+          {
+            "activity": "WaitForBatch",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "typeProperties": {
+          "source": {
+            "type": "AzureSqlSource",
+            "sqlReaderStoredProcedureName": "cfg.usp_GetSourceByName",
+            "storedProcedureParameters": {
+              "ClientCode": {
+                "value": "@pipeline().parameters.ClientCode",
+                "type": "String"
+              },
+              "SourceName": {
+                "value": "@pipeline().parameters.SourceName",
+                "type": "String"
+              }
+            }
+          },
+          "dataset": {
+            "referenceName": "ds_control_sql",
+            "type": "DatasetReference"
+          },
+          "firstRowOnly": true
+        }
+      },
+      {
+        "name": "RunSource",
+        "type": "ExecutePipeline",
+        "dependsOn": [
+          {
+            "activity": "LookupSource",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "typeProperties": {
+          "pipeline": {
+            "referenceName": "pl_skystack_run_source",
+            "type": "PipelineReference"
+          },
+          "waitOnCompletion": true,
+          "parameters": {
+            "SourceId": {
+              "value": "@activity('LookupSource').output.firstRow.SourceId",
+              "type": "Expression"
+            }
+          }
+        }
+      }
+    ]
+  }
+}

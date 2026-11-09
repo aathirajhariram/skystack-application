@@ -1,0 +1,75 @@
+{
+  "name": "pl_skystack_ingest_scheduled",
+  "properties": {
+    "description": "Safety-net schedule: runs every active source of a schedule group.",
+    "parameters": {
+      "ScheduleGroup": {
+        "type": "string",
+        "defaultValue": "DAILY"
+      }
+    },
+    "activities": [
+      {
+        "name": "LookupSources",
+        "type": "Lookup",
+        "typeProperties": {
+          "source": {
+            "type": "AzureSqlSource",
+            "sqlReaderStoredProcedureName": "cfg.usp_GetPendingSources",
+            "storedProcedureParameters": {
+              "ScheduleGroup": {
+                "value": "@pipeline().parameters.ScheduleGroup",
+                "type": "String"
+              }
+            }
+          },
+          "dataset": {
+            "referenceName": "ds_control_sql",
+            "type": "DatasetReference"
+          },
+          "firstRowOnly": false
+        }
+      },
+      {
+        "name": "ForEachSource",
+        "type": "ForEach",
+        "dependsOn": [
+          {
+            "activity": "LookupSources",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "typeProperties": {
+          "items": {
+            "value": "@activity('LookupSources').output.value",
+            "type": "Expression"
+          },
+          "isSequential": false,
+          "batchCount": 4,
+          "activities": [
+            {
+              "name": "RunSource",
+              "type": "ExecutePipeline",
+              "dependsOn": [],
+              "typeProperties": {
+                "pipeline": {
+                  "referenceName": "pl_skystack_run_source",
+                  "type": "PipelineReference"
+                },
+                "waitOnCompletion": true,
+                "parameters": {
+                  "SourceId": {
+                    "value": "@item().SourceId",
+                    "type": "Expression"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}
