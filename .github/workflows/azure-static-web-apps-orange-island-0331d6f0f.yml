@@ -47,7 +47,7 @@ jobs:
           ###### End of Repository/Build Configurations ######
         env:
           VITE_API_URL: https://skystack-api-bqerfcf4ewaraeeb.francecentral-01.azurewebsites.net
-          VITE_OPS_API_URL: skystack-ops-amd4e4fdb8d6dwfq.francecentral-01.azurewebsites.net
+          VITE_OPS_API_URL: https://skystack-ops-amd4e4fdb8d6dwfq.francecentral-01.azurewebsites.net
           VITE_ENTRA_CLIENT_ID: 3b979915-e729-41aa-a728-a1c8b49cec39
           VITE_ENTRA_TENANT_ID: 29b9aab6-0dfe-416d-8cc0-d13d1578f263
           VITE_ENTRA_API_SCOPE: api://3b979915-e729-41aa-a728-a1c8b49cec39/access_as_user
