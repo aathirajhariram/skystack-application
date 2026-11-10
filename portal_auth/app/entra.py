@@ -32,7 +32,7 @@ def require_platform_admin(authorization: str = Header(default="")) -> dict:
         claims = jwt.decode(token, key, algorithms=["RS256"], audience=audiences, issuer=issuers)
     except Exception as exc:                               # noqa: BLE001
         log.warning("Entra token rejected: %s: %s", type(exc).__name__, exc)
-        raise HTTPException(401, "invalid_token")
+        raise HTTPException(401, f"invalid_token [{type(exc).__name__}: {str(exc)[:160]}] aud={settings.entra_audience[:8]}.. tenant={settings.entra_tenant_id[:8]}.. v2")
     if settings.ops_required_role not in claims.get("roles", []):
         raise HTTPException(403, "forbidden")
     return {"actor": claims.get("preferred_username") or claims.get("oid", "ops")}
