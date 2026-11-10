@@ -32,7 +32,7 @@ BEGIN
     -- sources from the industry template (TemplateId -> new SourceId)
     DECLARE @map TABLE (TemplateId INT, SourceId INT);
     MERGE cfg.Source AS t
-    USING (SELECT * FROM cfg.SourceTemplate WHERE Industry = @Industry) AS s ON 1 = 0
+    USING (SELECT * FROM cfg.SourceTemplate WHERE Industry IN (@Industry, 'common')) AS s ON 1 = 0
     WHEN NOT MATCHED THEN
         INSERT (ClientId, SourceName, FileFormat, FilePattern, TargetConnectionId, TargetTable, WriteMode, ScdType, MinRowCount, ScheduleGroup)
         VALUES (@ClientId, s.SourceName, s.FileFormat, '*', @ConnId, s.TargetTable, s.WriteMode, s.ScdType, 1, 'DAILY')
