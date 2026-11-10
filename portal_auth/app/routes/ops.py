@@ -13,7 +13,7 @@ from app.services.credentials import issue_one_time_password
 
 log = logging.getLogger("skystack.ops")
 router = APIRouter(prefix="/ops", tags=["ops"])
-INDUSTRIES = ["logistics", "manufacturing", "real_estate", "construction", "marketing", "legal"]
+INDUSTRIES = ["logistics", "manufacturing", "real_estate", "construction", "marketing", "advertising", "legal"]
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
