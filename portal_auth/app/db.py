@@ -20,6 +20,7 @@ def _token_attrs() -> dict:
 
 
 log = logging.getLogger("skystack.db")
+pyodbc.pooling = False                                    # never hand a half-read connection to the next request
 
 
 def _open(server: str, database: str):
@@ -59,4 +60,8 @@ def query(sql: str, params: Sequence[Any] = (), server: Optional[str] = None,
     with connect(server or settings.control_db_server, database or settings.control_db_name) as conn:
         cur = conn.cursor()
         cur.execute(sql, tuple(params))
-        return _dicts(cur) if cur.description else []
+        rows = _dicts(cur) if cur.description else []
+        while cur.nextset():                               # drain extra result sets so the connection is clean when it is closed
+            pass
+        cur.close()
+        return rows
