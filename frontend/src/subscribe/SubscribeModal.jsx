@@ -23,7 +23,8 @@ const label = (s) => s.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
 
 export default function SubscribeHost() {
   const [open, setOpen] = useState(false);
-  const [plans, setPlans] = useState([]);
+  const [plans, setPlans] = useState(DEFAULT_PLANS);
+  const [live, setLive] = useState(false);
   const [industries, setIndustries] = useState(FALLBACK_INDUSTRIES);
   const [plan, setPlan] = useState("");
   const [step, setStep] = useState("plans");
@@ -38,10 +39,10 @@ export default function SubscribeHost() {
   }, []);
 
   useEffect(() => {
-    if (!open || plans.length) return;
-    publicPlans().then((p) => { setPlans(p); setPlan((cur) => cur || p.find((x) => x.popular)?.code || p[0]?.code || ""); }).catch(() => { setPlans(DEFAULT_PLANS); setPlan((cur) => cur || "pro"); });
+    if (!open || live) return;
+    publicPlans().then((p) => { setLive(true); setPlans(p); setPlan((cur) => cur || p.find((x) => x.popular)?.code || p[0]?.code || ""); }).catch(() => { setPlan((cur) => cur || "pro"); });
     publicIndustries().then(setIndustries).catch(() => {});
-  }, [open, plans.length]);
+  }, [open, live]);
 
   useEffect(() => {
     if (!open) return;
