@@ -1,4 +1,5 @@
 """ADLS Gen2 landing zone: landing/<client>/<source>/ - exactly where the ADF pipelines look."""
+import logging
 from datetime import datetime
 from functools import lru_cache
 from typing import Iterable
@@ -8,6 +9,8 @@ from azure.storage.filedatalake import DataLakeServiceClient
 
 from app.config import settings
 
+log = logging.getLogger("skystack.storage")
+
 
 @lru_cache(maxsize=1)
 def _landing():
@@ -16,8 +19,20 @@ def _landing():
 
 
 def put_file(client_code: str, source: str, safe_name: str, data: bytes) -> str:
+    """Creates the folder, creates the file, appends the bytes and flushes - each step explicit, so a failure names its step."""
     stamped = f"{datetime.utcnow():%Y%m%dT%H%M%S}_{safe_name}"
-    _landing().get_file_client(f"{client_code}/{source}/{stamped}").upload_data(data, overwrite=False)
+    folder = f"{client_code}/{source}"
+    path = f"{folder}/{stamped}"
+    fs = _landing()
+    try:
+        directory = fs.get_directory_client(folder)
+        directory.create_directory()                              # no-op when it already exists
+        file = directory.create_file(stamped)
+        file.append_data(data, offset=0, length=len(data))
+        file.flush_data(len(data))
+    except Exception:                                              # noqa: BLE001
+        log.exception("upload to %s/%s failed (account=%s)", settings.landing_container, path, settings.storage_account)
+        raise
     return stamped
 
 
