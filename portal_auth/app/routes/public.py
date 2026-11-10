@@ -2,9 +2,10 @@
 import json
 import logging
 import re
+import time
 
 import stripe
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 from app import db, deps, mailer, ratelimit
@@ -26,11 +27,19 @@ class SubscribeBody(BaseModel):
     website: str = ""                      # honeypot: real visitors never fill this hidden field
 
 
+_PLANS_CACHE = {"data": None, "at": 0.0}
+
+
 @router.get("/plans")
-def plans():
+def plans(response: Response):
+    response.headers["Cache-Control"] = "public, max-age=300"
+    if _PLANS_CACHE["data"] is not None and time.time() - _PLANS_CACHE["at"] < 300:
+        return _PLANS_CACHE["data"]
     rows = db.query("SELECT * FROM portal.vw_Plan ORDER BY DisplayOrder")
-    return [{"code": r["PlanCode"], "name": r["Name"], "price": float(r["PriceMonthly"]), "currency": r["Currency"],
+    data = [{"code": r["PlanCode"], "name": r["Name"], "price": float(r["PriceMonthly"]), "currency": r["Currency"],
              "tagline": r["Tagline"], "features": json.loads(r["Features"]), "popular": bool(r["IsPopular"])} for r in rows]
+    _PLANS_CACHE.update(data=data, at=time.time())
+    return data
 
 
 @router.get("/industries")
@@ -39,7 +48,7 @@ def industries():
 
 
 @router.post("/subscribe", dependencies=[Depends(deps.require_csrf_header)])
-def subscribe(body: SubscribeBody, request: Request):
+def subscribe(body: SubscribeBody, request: Request, bg: BackgroundTasks):
     """1) store the request  2) e-mail SkyStack with the customer's login details  3) e-mail the customer a payment link.
     The reply is identical whether or not the e-mail already has an account (no account enumeration)."""
     email = body.email.strip().lower()
@@ -59,7 +68,7 @@ def subscribe(body: SubscribeBody, request: Request):
     plan = plan_rows[0]
 
     if db.query("SELECT 1 AS x FROM portal.PortalUser WHERE Email = ?", (email,)):
-        mailer.notify_business("Subscription attempt by an existing user", [f"{email} tried to subscribe but already has an account."])
+        bg.add_task(mailer.notify_business, "Subscription attempt by an existing user", [f"{email} tried to subscribe but already has an account."])
         return {"ok": True}
 
     # re-submitting while a payment is pending re-uses the request and sends a fresh link (links expire after 24 h)
@@ -74,7 +83,7 @@ def subscribe(body: SubscribeBody, request: Request):
             "INSERT portal.SubscriptionRequest (Email, ContactName, CompanyName, Industry, PlanCode) OUTPUT inserted.RequestId "
             "VALUES (?,?,?,?,?)", (email, body.contact_name.strip(), body.company_name.strip(), body.industry, body.plan))[0]["RequestId"])
 
-    mailer.notify_business(f"New subscription request: {body.company_name.strip()} ({plan['Name']})", [
+    bg.add_task(mailer.notify_business, f"New subscription request: {body.company_name.strip()} ({plan['Name']})", [
         "A visitor requested a subscription.",
         f"Login e-mail (user id): {email}",
         f"Contact: {body.contact_name.strip()}", f"Company: {body.company_name.strip()}",
