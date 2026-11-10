@@ -143,3 +143,100 @@ BEGIN
       (@t, 'Billed per month',          'LINE', 'SUM',   'total_amount', NULL,          'published_date', 'decimal', 5);
 END
 GO
+
+-- ===== more data types: employees for every industry ('common'), clients / media / payments for advertising =====
+-- common / employees
+IF NOT EXISTS (SELECT 1 FROM cfg.SourceTemplate WHERE Industry = 'common' AND SourceName = 'employees')
+BEGIN
+    DECLARE @t INT;
+    INSERT cfg.SourceTemplate (Industry, SourceName, FileFormat, WriteMode, ScdType, TargetTable) VALUES ('common', 'employees', 'AUTO', 'OVERWRITE', 1, 'employees');
+    SET @t = SCOPE_IDENTITY();
+    INSERT cfg.ColumnTemplate (TemplateId, SourceColumn, TargetColumn, DataType, DateFormat, IsBusinessKey, IsNullable, ColumnOrder) VALUES
+      (@t, 'Employee ID', 'employee_id', 'string', NULL, 1, 0, 1),
+      (@t, 'Full Name', 'full_name', 'string', NULL, 0, 1, 2),
+      (@t, 'Department', 'department', 'string', NULL, 0, 1, 3),
+      (@t, 'Job Title', 'job_title', 'string', NULL, 0, 1, 4),
+      (@t, 'Employment Type', 'employment_type', 'string', NULL, 0, 1, 5),
+      (@t, 'Hire Date', 'hire_date', 'date', 'dd-MM-yyyy', 0, 1, 6),
+      (@t, 'Monthly Cost', 'monthly_cost', 'decimal(14,2)', NULL, 0, 1, 7),
+      (@t, 'Status', 'status', 'string', NULL, 0, 1, 8);
+    INSERT cfg.TileTemplate (TemplateId, Title, TileType, Aggregation, MeasureColumn, GroupColumn, DateColumn, NumberFormat, DisplayOrder) VALUES
+      (@t, 'Headcount', 'KPI', 'COUNT', NULL, NULL, NULL, 'number', 1),
+      (@t, 'Monthly staff cost', 'KPI', 'SUM', 'monthly_cost', NULL, NULL, 'decimal', 2),
+      (@t, 'Employees by department', 'BAR', 'COUNT', NULL, 'department', NULL, 'number', 3),
+      (@t, 'Hires per month', 'LINE', 'COUNT', NULL, NULL, 'hire_date', 'number', 4),
+      (@t, 'Employees by status', 'BAR', 'COUNT', NULL, 'status', NULL, 'number', 5);
+END
+GO
+
+-- advertising / ad_clients
+IF NOT EXISTS (SELECT 1 FROM cfg.SourceTemplate WHERE Industry = 'advertising' AND SourceName = 'ad_clients')
+BEGIN
+    DECLARE @t INT;
+    INSERT cfg.SourceTemplate (Industry, SourceName, FileFormat, WriteMode, ScdType, TargetTable) VALUES ('advertising', 'ad_clients', 'AUTO', 'OVERWRITE', 1, 'ad_clients');
+    SET @t = SCOPE_IDENTITY();
+    INSERT cfg.ColumnTemplate (TemplateId, SourceColumn, TargetColumn, DataType, DateFormat, IsBusinessKey, IsNullable, ColumnOrder) VALUES
+      (@t, 'Client ID', 'client_id', 'string', NULL, 1, 0, 1),
+      (@t, 'Client Name', 'client_name', 'string', NULL, 0, 1, 2),
+      (@t, 'Client Type', 'client_type', 'string', NULL, 0, 1, 3),
+      (@t, 'City', 'city', 'string', NULL, 0, 1, 4),
+      (@t, 'Contact Person', 'contact_person', 'string', NULL, 0, 1, 5),
+      (@t, 'Credit Limit', 'credit_limit', 'decimal(14,2)', NULL, 0, 1, 6),
+      (@t, 'Onboarded Date', 'onboarded_date', 'date', 'dd-MM-yyyy', 0, 1, 7),
+      (@t, 'Status', 'status', 'string', NULL, 0, 1, 8);
+    INSERT cfg.TileTemplate (TemplateId, Title, TileType, Aggregation, MeasureColumn, GroupColumn, DateColumn, NumberFormat, DisplayOrder) VALUES
+      (@t, 'Clients', 'KPI', 'COUNT', NULL, NULL, NULL, 'number', 1),
+      (@t, 'Total credit limit', 'KPI', 'SUM', 'credit_limit', NULL, NULL, 'decimal', 2),
+      (@t, 'Clients by type', 'BAR', 'COUNT', NULL, 'client_type', NULL, 'number', 3),
+      (@t, 'Clients by city', 'BAR', 'COUNT', NULL, 'city', NULL, 'number', 4),
+      (@t, 'New clients per month', 'LINE', 'COUNT', NULL, NULL, 'onboarded_date', 'number', 5);
+END
+GO
+
+-- advertising / media_partners
+IF NOT EXISTS (SELECT 1 FROM cfg.SourceTemplate WHERE Industry = 'advertising' AND SourceName = 'media_partners')
+BEGIN
+    DECLARE @t INT;
+    INSERT cfg.SourceTemplate (Industry, SourceName, FileFormat, WriteMode, ScdType, TargetTable) VALUES ('advertising', 'media_partners', 'AUTO', 'OVERWRITE', 1, 'media_partners');
+    SET @t = SCOPE_IDENTITY();
+    INSERT cfg.ColumnTemplate (TemplateId, SourceColumn, TargetColumn, DataType, DateFormat, IsBusinessKey, IsNullable, ColumnOrder) VALUES
+      (@t, 'Media ID', 'media_id', 'string', NULL, 1, 0, 1),
+      (@t, 'Media Name', 'media_name', 'string', NULL, 0, 1, 2),
+      (@t, 'Media Type', 'media_type', 'string', NULL, 0, 1, 3),
+      (@t, 'Language', 'language', 'string', NULL, 0, 1, 4),
+      (@t, 'City / Edition', 'edition', 'string', NULL, 0, 1, 5),
+      (@t, 'Rate per Sq Cm', 'rate_per_sqcm', 'decimal(12,2)', NULL, 0, 1, 6),
+      (@t, 'Circulation', 'circulation', 'int', NULL, 0, 1, 7),
+      (@t, 'Status', 'status', 'string', NULL, 0, 1, 8);
+    INSERT cfg.TileTemplate (TemplateId, Title, TileType, Aggregation, MeasureColumn, GroupColumn, DateColumn, NumberFormat, DisplayOrder) VALUES
+      (@t, 'Media partners', 'KPI', 'COUNT', NULL, NULL, NULL, 'number', 1),
+      (@t, 'Average rate per sq cm', 'KPI', 'AVG', 'rate_per_sqcm', NULL, NULL, 'decimal', 2),
+      (@t, 'Partners by media type', 'BAR', 'COUNT', NULL, 'media_type', NULL, 'number', 3),
+      (@t, 'Average rate by media', 'BAR', 'AVG', 'rate_per_sqcm', 'media_name', NULL, 'decimal', 4),
+      (@t, 'Partners by language', 'BAR', 'COUNT', NULL, 'language', NULL, 'number', 5);
+END
+GO
+
+-- advertising / payments
+IF NOT EXISTS (SELECT 1 FROM cfg.SourceTemplate WHERE Industry = 'advertising' AND SourceName = 'payments')
+BEGIN
+    DECLARE @t INT;
+    INSERT cfg.SourceTemplate (Industry, SourceName, FileFormat, WriteMode, ScdType, TargetTable) VALUES ('advertising', 'payments', 'AUTO', 'OVERWRITE', 1, 'payments');
+    SET @t = SCOPE_IDENTITY();
+    INSERT cfg.ColumnTemplate (TemplateId, SourceColumn, TargetColumn, DataType, DateFormat, IsBusinessKey, IsNullable, ColumnOrder) VALUES
+      (@t, 'Payment ID', 'payment_id', 'string', NULL, 1, 0, 1),
+      (@t, 'Statement ID', 'statement_id', 'string', NULL, 0, 1, 2),
+      (@t, 'Client ID', 'client_id', 'string', NULL, 0, 1, 3),
+      (@t, 'Payment Date', 'payment_date', 'date', 'dd-MM-yyyy', 0, 1, 4),
+      (@t, 'Payment Mode', 'payment_mode', 'string', NULL, 0, 1, 5),
+      (@t, 'Reference No', 'reference_no', 'string', NULL, 0, 1, 6),
+      (@t, 'Amount Paid', 'amount_paid', 'decimal(14,2)', NULL, 0, 1, 7),
+      (@t, 'Status', 'status', 'string', NULL, 0, 1, 8);
+    INSERT cfg.TileTemplate (TemplateId, Title, TileType, Aggregation, MeasureColumn, GroupColumn, DateColumn, NumberFormat, DisplayOrder) VALUES
+      (@t, 'Total collected', 'KPI', 'SUM', 'amount_paid', NULL, NULL, 'decimal', 1),
+      (@t, 'Payments received', 'KPI', 'COUNT', NULL, NULL, NULL, 'number', 2),
+      (@t, 'Collected by payment mode', 'BAR', 'SUM', 'amount_paid', 'payment_mode', NULL, 'decimal', 3),
+      (@t, 'Collected per month', 'LINE', 'SUM', 'amount_paid', NULL, 'payment_date', 'decimal', 4),
+      (@t, 'Payments by status', 'BAR', 'COUNT', NULL, 'status', NULL, 'number', 5);
+END
+GO
