@@ -15,7 +15,7 @@ from app.services import billing
 log = logging.getLogger("skystack.public")
 router = APIRouter(prefix="/public", tags=["public"])
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-INDUSTRIES = ["logistics", "manufacturing", "real_estate", "construction", "marketing", "legal"]
+INDUSTRIES = ["logistics", "manufacturing", "real_estate", "construction", "marketing", "advertising", "legal"]
 
 
 class SubscribeBody(BaseModel):
