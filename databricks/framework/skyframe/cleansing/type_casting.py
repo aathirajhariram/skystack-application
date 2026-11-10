@@ -21,7 +21,8 @@ def _raw_sql(actual: str, cm: ColumnMap) -> str:
 
 def _numeric_sql(raw: str, decimal_comma: bool) -> str:
     """'1,234.50' / '₹ 1,234.50' / '(250)'  ->  '1234.50' / '-250'"""
-    s = f"regexp_replace({raw}, '^\\\\((.*)\\\\)$', '-$1')"             # (250) -> -250
+    s = f"regexp_replace({raw}, '\\\\s*/?-+\\\\s*$', '')"                # Rs4788/-  or  4788-  ->  Rs4788
+    s = f"regexp_replace({s}, '^\\\\((.*)\\\\)$', '-$1')"                    # (250) -> -250
     if decimal_comma:                                                   # 1.234,50 -> 1234.50
         s = f"replace(regexp_replace({s}, '\\\\.', ''), ',', '.')"
     return f"regexp_replace({s}, '[^0-9.\\\\-]', '')"
