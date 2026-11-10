@@ -1,5 +1,6 @@
 """SkyStack staff authenticate with Microsoft Entra ID. Access is an Entra APP ROLE (Platform.Admin),
 assigned in Azure to named people/groups - that is the Azure RBAC for the Ops side."""
+import logging
 from functools import lru_cache
 
 import jwt
@@ -7,6 +8,8 @@ from fastapi import Header, HTTPException
 from jwt import PyJWKClient
 
 from app.config import settings
+
+log = logging.getLogger("entra")
 
 
 @lru_cache(maxsize=1)
@@ -20,9 +23,15 @@ def require_platform_admin(authorization: str = Header(default="")) -> dict:
         raise HTTPException(401, "missing_token")
     try:
         key = _jwks().get_signing_key_from_jwt(token).key
-        claims = jwt.decode(token, key, algorithms=["RS256"], audience=settings.entra_audience,
-                            issuer=f"https://login.microsoftonline.com/{settings.entra_tenant_id}/v2.0")
-    except jwt.PyJWTError:
+        # Entra issues v1 or v2 tokens depending on the app's accessTokenAcceptedVersion: v2 tokens carry the client id
+        # as audience and the login.microsoftonline.com issuer, v1 tokens carry the api:// URI and the sts.windows.net issuer.
+        aud = settings.entra_audience
+        audiences = [aud, aud.removeprefix("api://")] if aud.startswith("api://") else [aud, f"api://{aud}"]
+        issuers = [f"https://login.microsoftonline.com/{settings.entra_tenant_id}/v2.0",
+                   f"https://sts.windows.net/{settings.entra_tenant_id}/"]
+        claims = jwt.decode(token, key, algorithms=["RS256"], audience=audiences, issuer=issuers)
+    except Exception as exc:                               # noqa: BLE001
+        log.warning("Entra token rejected: %s: %s", type(exc).__name__, exc)
         raise HTTPException(401, "invalid_token")
     if settings.ops_required_role not in claims.get("roles", []):
         raise HTTPException(403, "forbidden")
