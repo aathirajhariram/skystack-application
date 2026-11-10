@@ -16,8 +16,16 @@ const msal = new PublicClientApplication({
 });
 const scopes = [env.VITE_ENTRA_API_SCOPE || ""];
 
-async function accessToken(interactive) {
+let inflight = null;   // one sign-in at a time: parallel callers share the same token request
+function accessToken(interactive) {
+  if (!interactive) return fetchToken(false);
+  if (!inflight) inflight = fetchToken(true).finally(() => { inflight = null; });
+  return inflight;
+}
+
+async function fetchToken(interactive) {
   await msal.initialize();
+  await msal.handleRedirectPromise().catch(() => null);
   let account = msal.getAllAccounts()[0];
   if (!account) {
     if (!interactive) return null;
