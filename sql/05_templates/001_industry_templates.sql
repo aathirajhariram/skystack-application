@@ -107,4 +107,39 @@ INSERT cfg.TileTemplate (TemplateId, Title, TileType, Aggregation, MeasureColumn
   (@t, 'Billed by practice area', 'BAR', 'SUM', 'billed_amount', 'practice_area', NULL, 'decimal', 3),
   (@t, 'Matters opened per month', 'LINE', 'COUNT', NULL, NULL, 'opened_date', 'number', 4),
   (@t, 'Matters by status', 'BAR', 'COUNT', NULL, 'status', NULL, 'number', 5);
+
+-- advertising: newspaper-advertisement billing statements
+IF NOT EXISTS (SELECT 1 FROM cfg.SourceTemplate WHERE Industry = 'advertising' AND SourceName = 'ad_statements')
+BEGIN
+    INSERT cfg.SourceTemplate (Industry, SourceName, FileFormat, WriteMode, ScdType, TargetTable)
+    VALUES ('advertising', 'ad_statements', 'AUTO', 'OVERWRITE', 1, 'ad_statements');
+    DECLARE @t INT = SCOPE_IDENTITY();
+
+    -- SourceColumn = exact header in the Excel file; TargetColumn = column name in the client's database.
+    -- "Bill Settled" is empty in the sample file, so it is not mapped.
+    INSERT cfg.ColumnTemplate (TemplateId, SourceColumn, TargetColumn, DataType, DateFormat, IsBusinessKey, IsNullable, ColumnOrder) VALUES
+      (@t, 'Statement_Id',          'statement_id',   'string',        NULL,         1, 0, 1),
+      (@t, 'Client_Id',             'client_ref',     'string',        NULL,         0, 1, 2),
+      (@t, 'Client_Name',           'client_name',    'string',        NULL,         0, 1, 3),
+      (@t, 'Notice_Id',             'notice_id',      'string',        NULL,         0, 1, 4),
+      (@t, 'Notice',                'notice_type',    'string',        NULL,         0, 1, 5),
+      (@t, 'Party_Id',              'party_id',       'string',        NULL,         0, 1, 6),
+      (@t, 'Party_Name',            'party_name',     'string',        NULL,         0, 1, 7),
+      (@t, 'SNE_ID',                'sne_id',         'string',        NULL,         0, 1, 8),
+      (@t, 'SNE_No',                'sne_no',         'string',        NULL,         0, 1, 9),
+      (@t, 'Size',                  'ad_size',        'string',        NULL,         0, 1, 10),
+      (@t, 'Published_Date',        'published_date', 'date',          'dd-MM-yyyy', 0, 1, 11),
+      (@t, 'Total_Amount_With_GST', 'total_amount',   'decimal(14,2)', NULL,         0, 1, 12),
+      (@t, 'Transfer_Type',         'payment_mode',   'string',        NULL,         0, 1, 13),
+      (@t, 'Cheque_No',             'cheque_no',      'string',        NULL,         0, 1, 14),
+      (@t, 'Transfer_Date',         'payment_date',   'date',          'dd-MM-yyyy', 0, 1, 15),
+      (@t, 'Paper_Published',       'newspaper',      'string',        NULL,         0, 1, 16);
+
+    INSERT cfg.TileTemplate (TemplateId, Title, TileType, Aggregation, MeasureColumn, GroupColumn, DateColumn, NumberFormat, DisplayOrder) VALUES
+      (@t, 'Total billed (incl. GST)',  'KPI',  'SUM',   'total_amount', NULL,          NULL,             'decimal', 1),
+      (@t, 'Statements',                'KPI',  'COUNT', NULL,           NULL,          NULL,             'number',  2),
+      (@t, 'Billed by newspaper',       'BAR',  'SUM',   'total_amount', 'newspaper',   NULL,             'decimal', 3),
+      (@t, 'Billed by notice type',     'BAR',  'SUM',   'total_amount', 'notice_type', NULL,             'decimal', 4),
+      (@t, 'Billed per month',          'LINE', 'SUM',   'total_amount', NULL,          'published_date', 'decimal', 5);
+END
 GO
