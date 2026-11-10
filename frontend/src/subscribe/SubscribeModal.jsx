@@ -6,7 +6,7 @@ import "./subscribe.css";
 // Any button can open this popup:  window.dispatchEvent(new CustomEvent("skystack:subscribe", { detail: { plan: "pro" } }))
 export const openSubscribe = (plan) => window.dispatchEvent(new CustomEvent("skystack:subscribe", { detail: { plan } }));
 
-const FALLBACK_INDUSTRIES = ["logistics", "manufacturing", "real_estate", "construction", "marketing", "legal"];
+const FALLBACK_INDUSTRIES = ["logistics", "manufacturing", "real_estate", "construction", "marketing", "advertising", "legal"];
 const money = (p) => new Intl.NumberFormat("en-GB", { style: "currency", currency: p.currency, maximumFractionDigits: 0 }).format(p.price);
 // Shown when the plans service cannot be reached (for example before the backend is deployed).
 // The live prices and features always come from cfg.Plan once the API answers.
