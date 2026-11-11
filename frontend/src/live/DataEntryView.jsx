@@ -1,27 +1,32 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  entryHistory, entryLock, entryRelease, entryStatus, features as fetchFeatures,
-  sources as fetchSources, sourceColumns, submitGrid, submitCustom,
+  entryHistory, entryLock, entryRelease, entryStatus, features as fetchFeatures, saveTable, sendEntry, tables as fetchTables,
 } from "../auth/api.js";
 
 const START_ROWS = 10;
 const HEARTBEAT_MS = 120000;       // while editing: renew the slot every 2 minutes
 const WAIT_POLL_MS = 15000;        // while someone else edits: look again every 15 seconds
 const emptyRow = (n) => Array(n).fill("");
-const CUSTOM = "__custom__";                      // the "My own table" choice in the Table list
+const NEW = "__new__";             // "+ New table" in the list
+const ACTION = {
+  GRID_SENT: "Sent data", GRID_REJECTED: "Rejected (validation)", GRID_TAKEOVER: "Editing slot released by admin",
+  GRID_LOCK: "Started editing", TABLE_SAVED: "Saved the table", UPLOAD: "Uploaded a file",
+};
 const TYPE_OPTIONS = [
   ["text", "Text"], ["whole", "Whole number"], ["decimal", "Decimal number"],
   ["date:dd-MM-yyyy", "Date (dd-MM-yyyy)"], ["date:yyyy-MM-dd", "Date (yyyy-MM-dd)"],
   ["date:dd/MM/yyyy", "Date (dd/MM/yyyy)"], ["date:MM/dd/yyyy", "Date (MM/dd/yyyy)"], ["yesno", "Yes / No"],
 ];
+const TYPE_LABEL = Object.fromEntries(TYPE_OPTIONS);
 const newDef = () => ({ name: "", type: "text" });
+const fromSaved = (d) => ({ name: d.name, type: d.type === "date" ? `date:${d.date_format}` : d.type });   // saved column -> heading
 function defToCol(d) {                            // what the cell checks need to know about a column
   const [kind, fmt] = d.type.split(":");
   const type = { text: "string", whole: "bigint", decimal: "decimal(18,4)", date: "date", yesno: "boolean" }[kind];
   return { name: d.name.trim(), type, date_format: fmt || null, key: false, required: false };
 }
 const defToPayload = (d) => { const [kind, fmt] = d.type.split(":"); return { name: d.name.trim(), type: kind, decimals: 4, date_format: fmt || null }; };
-const ACTION = { GRID_SENT: "Sent data", GRID_REJECTED: "Rejected (validation)", GRID_TAKEOVER: "Editing slot released by admin", GRID_LOCK: "Started editing" };
+const slugOf = (t) => t.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
 
 // ---- column-level checks by data type (the server repeats them; this is for instant feedback) ----
 function validDate(v, fmt) {
@@ -62,57 +67,62 @@ function cellError(col, value) {
 
 export default function DataEntryView({ goUploads, isAdmin }) {
   const [allowed, setAllowed] = useState(null);
-  const [sources, setSources] = useState([]);
-  const [source, setSource] = useState("");
-  const [fetchedCols, setCols] = useState([]);
+  const [saved, setSaved] = useState([]);                // the client's tables that have columns
+  const [table, setTable] = useState("");                // name of the chosen table, or NEW
+  const [title, setTitle] = useState("");                // name typed for a new table
+  const [defs, setDefs] = useState([newDef(), newDef(), newDef()]);   // the column headings: name + data type
   const [rows, setRows] = useState([]);
   const [lock, setLock] = useState({ mine: false, free: true, holder: null });
-  const [checked, setChecked] = useState(false);       // red cells only after the first "Send"
+  const [checked, setChecked] = useState(false);        // red cells for everything after the first "Send"
+  const [touched, setTouched] = useState({});           // cells already left -> checked straight away
   const [serverErrors, setServerErrors] = useState({}); // "gridRow:Column" -> message
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);                 // { ok, text }
   const [history, setHistory] = useState([]);
-  const [custName, setCustName] = useState("");        // "My own table": its name ...
-  const [custDefs, setCustDefs] = useState([newDef(), newDef(), newDef()]);   // ... and its columns (name + data type)
-  const [touched, setTouched] = useState({});          // cells the user has already left -> checked straight away
-  const custom = source === CUSTOM;
-  const custCols = useMemo(() => custDefs.map(defToCol), [custDefs]);   // always in step with the headings
-  const cols = custom ? custCols : fetchedCols;
+  const tableRef = useRef(null);
+  const justFocused = useRef(false);                    // first click on a cell selects its whole value
+  const keepSheet = useRef(false);                      // after "Save table" the typed rows stay
+  const isNew = table === NEW;
+  const cols = useMemo(() => defs.map(defToCol), [defs]);
   const mineRef = useRef(false);
   mineRef.current = lock.mine;
+  const open = isNew || lock.mine;                      // headings and cells can be changed
+  const canEdit = open && !busy;
 
   const loadHistory = useCallback(() => entryHistory().then(setHistory).catch(() => {}), []);
-  useEffect(() => {
-    fetchFeatures().then((f) => setAllowed(f.data_entry)).catch(() => setAllowed(false));
-    fetchSources().then((s) => { setSources(s); setSource((cur) => cur || s[0] || CUSTOM); }).catch((e) => setMsg({ ok: false, text: e.message }));
-    loadHistory();
-  }, [loadHistory]);
+  const loadTables = useCallback(() => fetchTables().then((t) => { const list = t.filter((x) => x.defs); setSaved(list); return list; }), []);
 
-  const resetTable = useCallback((c) => {
-    setRows(Array.from({ length: START_ROWS }, () => emptyRow(c.length)));
+  const resetSheet = useCallback((n) => {
+    setRows(Array.from({ length: START_ROWS }, () => emptyRow(n)));
     setChecked(false); setServerErrors({}); setTouched({});
   }, []);
 
-  // columns of the chosen data type
   useEffect(() => {
-    if (!allowed || !source) return undefined;
-    if (source === CUSTOM) { resetTable(custDefs); setMsg(null); return undefined; }
-    let alive = true;
-    sourceColumns(source).then((c) => { if (alive) { setCols(c); resetTable(c); setMsg(null); } })
-      .catch((e) => alive && setMsg({ ok: false, text: e.message }));
-    return () => { alive = false; };
-  }, [allowed, source, resetTable]);
+    fetchFeatures().then((f) => setAllowed(f.data_entry)).catch(() => setAllowed(false));
+    loadTables().then((list) => setTable((cur) => cur || (list[0] ? list[0].name : NEW))).catch((e) => setMsg({ ok: false, text: e.message }));
+    loadHistory();
+  }, [loadTables, loadHistory]);
 
-  // the editing slot: while someone else holds it we only watch; while we hold it we keep renewing it
+  // choosing a table: a saved one brings its columns, a new one starts with empty headings
   useEffect(() => {
-    if (!allowed || !source) return undefined;
-    if (source === CUSTOM) { setLock({ mine: false, free: true, holder: null }); return undefined; }   // own tables need no slot
+    if (!allowed || !table) return;
+    if (keepSheet.current) { keepSheet.current = false; return; }
+    const d = isNew ? [newDef(), newDef(), newDef()] : (saved.find((x) => x.name === table)?.defs || []).map(fromSaved);
+    setDefs(d.length ? d : [newDef()]);
+    if (isNew) setTitle("");
+    resetSheet(d.length || 1);
+    setMsg(null);
+  }, [allowed, table]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // the editing slot of a saved table: while someone else holds it we only watch; while we hold it we keep renewing it
+  useEffect(() => {
+    setLock({ mine: false, free: true, holder: null });
+    if (!allowed || !table || isNew) return undefined;
     let alive = true;
     let timer;
-    setLock({ mine: false, free: true, holder: null });
     const tick = async () => {
       try {
-        const st = mineRef.current ? await entryLock(source) : await entryStatus(source);   // renew only when it is ours
+        const st = mineRef.current ? await entryLock(table) : await entryStatus(table);
         if (alive) setLock(st);
       } catch { /* try again at the next tick */ }
       if (alive) timer = setTimeout(tick, mineRef.current ? HEARTBEAT_MS : WAIT_POLL_MS);
@@ -120,26 +130,27 @@ export default function DataEntryView({ goUploads, isAdmin }) {
     timer = setTimeout(tick, 0);
     return () => {
       alive = false; clearTimeout(timer);
-      if (mineRef.current) entryRelease(source).catch(() => {});                              // leaving the page frees the slot
+      if (mineRef.current) entryRelease(table).catch(() => {});                           // leaving the page frees the slot
     };
-  }, [allowed, source]);
+  }, [allowed, table, isNew]);
 
   async function startEditing() {
     setMsg(null);
     try {
-      const st = await entryLock(source);
+      const st = await entryLock(table);
       setLock(st);
       if (!st.mine) setMsg({ ok: false, text: `${st.holder?.name || "Someone"} is editing this table right now.` });
     } catch (e) { setMsg({ ok: false, text: e.message }); }
   }
   async function stopEditing() {
-    await entryRelease(source).catch(() => {});
+    await entryRelease(table).catch(() => {});
     setLock({ mine: false, free: true, holder: null });
-    resetTable(cols);
+    const d = (saved.find((x) => x.name === table)?.defs || []).map(fromSaved);   // back to the saved columns
+    setDefs(d); resetSheet(d.length);
   }
   async function takeOver() {
     if (!window.confirm(`Release the editing slot of ${lock.holder?.name}? Their unsent entries will not be saved.`)) return;
-    try { await entryRelease(source, true); await startEditing(); loadHistory(); } catch (e) { setMsg({ ok: false, text: e.message }); }
+    try { await entryRelease(table, true); await startEditing(); loadHistory(); } catch (e) { setMsg({ ok: false, text: e.message }); }
   }
 
   if (allowed === null) return <p className="live-muted">Loading…</p>;
@@ -156,21 +167,47 @@ export default function DataEntryView({ goUploads, isAdmin }) {
     );
   }
 
-  const editable = (lock.mine || custom) && !busy;
-  const setDef = (j, patch) => setCustDefs((d) => d.map((x, i) => (i === j ? { ...x, ...patch } : x)));
-  const addCustCol = () => { setCustDefs((d) => [...d, newDef()]); setRows((rs) => rs.map((r) => [...r, ""])); };
-  const removeCustCol = (j) => {
-    if (custDefs.length < 2) return;
-    setCustDefs((d) => d.filter((_, i) => i !== j)); setRows((rs) => rs.map((r) => r.filter((_, i) => i !== j)));
+  const setDef = (j, patch) => setDefs((d) => d.map((x, i) => (i === j ? { ...x, ...patch } : x)));
+  const addCol = () => { setDefs((d) => [...d, newDef()]); setRows((rs) => rs.map((r) => [...r, ""])); };
+  const removeCol = (j) => {
+    if (defs.length < 2) return;
+    setDefs((d) => d.filter((_, i) => i !== j)); setRows((rs) => rs.map((r) => r.filter((_, i) => i !== j)));
     setServerErrors({}); setTouched({});
   };
-  const fileName = `${custName.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "table_name"}_${new Date().toISOString().slice(0, 19).replace(/[-:]/g, "").replace("T", "_")}.csv`;
   const setCell = (r, c, v) => {
     setRows((rs) => rs.map((row, i) => (i === r ? row.map((x, j) => (j === c ? v : x)) : row)));
     setServerErrors((e) => { if (!Object.keys(e).length) return e; const n = { ...e }; delete n[`${r}:${cols[c].name}`]; return n; });
   };
   const addRows = (n = 5) => setRows((rs) => [...rs, ...Array.from({ length: n }, () => emptyRow(cols.length))]);
   const removeRow = (r) => setRows((rs) => (rs.length > 1 ? rs.filter((_, i) => i !== r) : rs));
+
+  // ---- spreadsheet-style movement: arrows, Enter, whole-cell copy / cut ----
+  const focusCell = (r, c) => {
+    const el = tableRef.current?.querySelector(`input[data-r="${r}"][data-c="${c}"]`);
+    if (el) { el.focus(); return true; }
+    return false;
+  };
+  function onKey(e, r, c) {
+    const el = e.target;
+    const len = el.value.length;
+    const whole = el.selectionStart === 0 && el.selectionEnd === len;            // whole value selected (after arrow / click into the cell)
+    const atEnd = el.selectionStart === len && el.selectionEnd === len;
+    const atStart = el.selectionStart === 0 && el.selectionEnd === 0;
+    const go = (nr, nc) => {
+      e.preventDefault();
+      if (nr >= rows.length) { addRows(5); setTimeout(() => focusCell(nr, nc), 30); } else focusCell(nr, nc);
+    };
+    if (e.key === "Enter") return go(e.shiftKey ? Math.max(r - 1, 0) : r + 1, c);
+    if (e.key === "ArrowDown") return go(r + 1, c);
+    if (e.key === "ArrowUp" && r > 0) return go(r - 1, c);
+    if (e.key === "ArrowRight" && (atEnd || whole) && c < cols.length - 1) return go(r, c + 1);
+    if (e.key === "ArrowLeft" && (atStart || whole) && c > 0) return go(r, c - 1);
+    if ((e.ctrlKey || e.metaKey) && (e.key === "c" || e.key === "x") && el.selectionStart === el.selectionEnd && len) {
+      e.preventDefault();                                                           // nothing selected: copy the whole cell
+      navigator.clipboard?.writeText(el.value).catch(() => {});
+      if (e.key === "x") setCell(r, c, "");
+    }
+  }
 
   function onPaste(e, r, c) {                           // paste a block straight from Excel / Google Sheets
     const text = e.clipboardData.getData("text");
@@ -187,28 +224,52 @@ export default function DataEntryView({ goUploads, isAdmin }) {
     });
   }
 
-  const aligned = rows.every((r) => r.length === cols.length);   // for one render after switching tables the old rows do not fit the new columns yet
+  const aligned = rows.every((r) => r.length === cols.length);   // for one render after switching tables the old rows do not fit yet
   const filledIdx = rows.map((row, i) => (row.some((v) => v.trim()) ? i : -1)).filter((i) => i >= 0);
   const localErrors = filledIdx.reduce((n, i) => n + rows[i].filter((v, j) => cols[j] && cellError(cols[j], v)).length, 0);
   const serverCount = Object.keys(serverErrors).length;
+  const name = isNew ? slugOf(title) : table;
+  const fileName = `${name || "table_name"}_${new Date().toISOString().slice(0, 19).replace(/[-:]/g, "").replace("T", "_")}.csv`;
+
+  function headingsProblem() {                          // the table needs a name, and every column a unique name
+    if (isNew) {
+      if (!title.trim()) return "Give your table a name first.";
+      if (name.length < 2) return "The table name needs at least 2 letters or numbers.";
+      if (saved.some((x) => x.name === name)) return "You already have a table with this name. Choose it from the list.";
+    }
+    const names = defs.map((d) => d.name.trim().toLowerCase());
+    if (names.some((n) => !n)) return "Every column needs a name (type it in the column heading).";
+    if (new Set(names).size !== names.length) return "Two columns have the same name.";
+    return "";
+  }
+
+  async function save() {
+    const problem = headingsProblem();
+    if (problem) return setMsg({ ok: false, text: problem });
+    setBusy(true); setMsg(null);
+    try {
+      await saveTable(isNew ? title.trim() : table, defs.map(defToPayload));
+      await loadTables(); loadHistory();
+      if (isNew) { keepSheet.current = true; setTable(name); }
+      setMsg({ ok: true, text: isNew ? "Table saved. It is in the list now - press Start editing to enter data." : "Columns saved." });
+    } catch (e) { setMsg({ ok: false, text: e.message }); }
+    setBusy(false);
+  }
 
   async function send() {
     setChecked(true); setMsg(null); setServerErrors({});
+    const problem = headingsProblem();
+    if (problem) return setMsg({ ok: false, text: problem });
     if (!filledIdx.length) return setMsg({ ok: false, text: "Add at least one row first." });
     if (localErrors) return setMsg({ ok: false, text: `${localErrors} cell${localErrors > 1 ? "s need" : " needs"} fixing (marked in red). Nothing was sent.` });
-    if (custom) {
-      if (!custName.trim()) return setMsg({ ok: false, text: "Give your table a name first." });
-      const names = custDefs.map((d) => d.name.trim().toLowerCase());
-      if (names.some((n) => !n)) return setMsg({ ok: false, text: "Every column needs a name (type it in the column heading)." });
-      if (new Set(names).size !== names.length) return setMsg({ ok: false, text: "Two columns have the same name." });
-    }
     setBusy(true);
     try {
-      const picked = filledIdx.map((i) => rows[i]);
-      const res = custom ? await submitCustom(custName.trim(), custDefs.map(defToPayload), picked) : await submitGrid(source, picked);
-      setMsg({ ok: true, text: `${res.rows} row${res.rows > 1 ? "s" : ""} sent${custom ? ` as ${res.uploaded}` : ""}. Processing starts shortly.` });
-      if (!custom) setLock({ mine: false, free: true, holder: null });      // the server released the slot
-      resetTable(cols); loadHistory();
+      const res = await sendEntry(isNew ? title.trim() : table, defs.map(defToPayload), filledIdx.map((i) => rows[i]));
+      setMsg({ ok: true, text: `${res.rows} row${res.rows > 1 ? "s" : ""} sent as ${res.uploaded}.` });
+      await loadTables();
+      if (isNew) setTable(res.table); else setLock({ mine: false, free: true, holder: null });   // the server released the slot
+      loadHistory();
+      const d = defs; resetSheet(d.length);
     } catch (e) {
       if (e.code === "validation_failed" && e.data?.errors) {
         const map = {};
@@ -219,7 +280,7 @@ export default function DataEntryView({ goUploads, isAdmin }) {
       } else if (e.code === "lock_required" || e.code === "locked_by_other") {
         setMsg({ ok: false, text: "Your editing slot has ended, so nothing was sent. Your entries are still here - press Start editing and send again." });
         setLock({ mine: false, free: e.code === "lock_required", holder: null });
-        entryStatus(source).then(setLock).catch(() => {});
+        entryStatus(table).then(setLock).catch(() => {});
       } else {
         setMsg({ ok: false, text: e.code === "plan_required" ? "Table entry is included in the Pro and Elite plans." : e.message });
       }
@@ -227,15 +288,13 @@ export default function DataEntryView({ goUploads, isAdmin }) {
     setBusy(false);
   }
 
-  const banner = custom
-    ? <p className="grid-banner mine">Your own table: name it, then name each column and choose its data type in the column headings. Everything you type is checked by data type, and only you see this sheet until you press <b>Send data</b>.</p>
+  const banner = isNew
+    ? "A new table: name it, then name each column and choose its data type in the column headings. Save it once and it stays in your list."
     : lock.mine
-    ? <p className="grid-banner mine">You are editing this table. Others must wait until you send or stop. The slot is renewed while this page is open.</p>
-    : lock.free
-      ? <p className="grid-banner">Press <b>Start editing</b> to reserve this table. Only one person can enter data at a time.</p>
-      : <p className="grid-banner other"><b>{lock.holder?.name}</b> is entering data for this table
-          {lock.holder?.since && <> (since {new Date(lock.holder.since).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })})</>}.
-          Please wait - this page updates by itself when it is free.</p>;
+      ? "You are editing this table. Others must wait until you send or stop."
+      : lock.free
+        ? "Press Start editing to add data. Only one person can edit a table at a time."
+        : null;
 
   return (
     <>
@@ -243,48 +302,48 @@ export default function DataEntryView({ goUploads, isAdmin }) {
         <div className="portal-panel-head"><div>
           <span className="portal-panel-kicker">PRO AND ELITE</span>
           <h2>Enter data in a table</h2>
-          <p>Type or paste rows from Excel. Every column is checked against its column type before anything is sent. Rows with an existing key update that record.</p>
+          <p>Type or paste rows from Excel. Every column is checked against its data type before anything is sent.</p>
         </div></div>
-        {msg && <p className={msg.ok ? "live-ok" : "live-error"}>{msg.text}{msg.ok && <> <button className="link-btn" onClick={goUploads}>View status</button></>}</p>}
+        {msg && <p className={msg.ok ? "live-ok" : "live-error"}>{msg.text}{msg.ok && msg.text.includes("sent as") && <> <button className="link-btn" onClick={goUploads}>View uploads</button></>}</p>}
         <div className="live-row">
           <label className="live-field">Table
-            <select value={source} onChange={(e) => setSource(e.target.value)} disabled={busy || lock.mine}>
-              {sources.map((s) => <option key={s} value={s}>{s.replace(/_/g, " ").replace(/^\w/, (ch) => ch.toUpperCase())}</option>)}
-              <option value={CUSTOM}>✎ My own table…</option>
+            <select value={table} onChange={(e) => setTable(e.target.value)} disabled={busy || lock.mine}>
+              {saved.map((t) => <option key={t.name} value={t.name}>{t.title}</option>)}
+              <option value={NEW}>+ New table…</option>
             </select>
           </label>
-          {!custom && !lock.mine && lock.free && <button className="button button-primary" onClick={startEditing} disabled={!source}>Start editing</button>}
-          {!custom && !lock.mine && !lock.free && isAdmin && <button className="subtle-action" onClick={takeOver}>Take over (admin)</button>}
-          {!custom && lock.mine && <button className="subtle-action" onClick={stopEditing} disabled={busy}>Stop editing</button>}
+          {isNew && (
+            <label className="live-field">Table name
+              <input type="text" value={title} maxLength={60} placeholder="e.g. Campaigns" onChange={(e) => setTitle(e.target.value)} disabled={busy} />
+            </label>
+          )}
+          {!isNew && !lock.mine && lock.free && <button className="grid-btn" onClick={startEditing}>Start editing</button>}
+          {!isNew && !lock.mine && !lock.free && isAdmin && <button className="grid-btn" onClick={takeOver}>Take over (admin)</button>}
+          {!isNew && lock.mine && <button className="grid-btn" onClick={stopEditing} disabled={busy}>Stop editing</button>}
           <span className="live-muted">{filledIdx.length} row{filledIdx.length === 1 ? "" : "s"} filled</span>
         </div>
-        {banner}
-        {custom && (
-          <div className="live-row">
-            <label className="live-field">Table name
-              <input type="text" value={custName} maxLength={60} placeholder="e.g. Campaigns" onChange={(e) => setCustName(e.target.value)} disabled={busy} />
-            </label>
-            <span className="live-muted">Saved as <b>{fileName}</b> (date and time in UTC)</span>
-          </div>
+        {banner && <p className={lock.mine ? "grid-banner mine" : "grid-banner"}>{banner}</p>}
+        {!isNew && !lock.mine && !lock.free && (
+          <p className="grid-banner other"><b>{lock.holder?.name}</b> is entering data for this table
+            {lock.holder?.since && <> (since {new Date(lock.holder.since).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })})</>}.
+            Please wait - this page updates by itself when it is free.</p>
         )}
+        <p className="live-muted">Each send is saved as <b>{fileName}</b> (date and time in UTC).</p>
         <div className="grid-wrap">
-          <table className="grid-table">
+          <table className="grid-table" ref={tableRef}>
             <thead><tr>
               <th className="grid-no">#</th>
-              {cols.map((c, ci) => (
-                custom ? (
+              {defs.map((d, ci) => (
+                open ? (
                   <th key={ci} className="grid-custom-head">
-                    <input value={custDefs[ci].name} placeholder="Column name" maxLength={60} aria-label={`Column ${ci + 1} name`} onChange={(e) => setDef(ci, { name: e.target.value })} />
-                    <select value={custDefs[ci].type} aria-label={`Column ${ci + 1} data type`} onChange={(e) => setDef(ci, { type: e.target.value })}>
+                    <input value={d.name} placeholder="Column name" maxLength={60} aria-label={`Column ${ci + 1} name`} onChange={(e) => setDef(ci, { name: e.target.value })} />
+                    <select value={d.type} aria-label={`Column ${ci + 1} data type`} onChange={(e) => setDef(ci, { type: e.target.value })}>
                       {TYPE_OPTIONS.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                     </select>
-                    {custDefs.length > 1 && <button className="link-btn" onClick={() => removeCustCol(ci)} aria-label={`Remove column ${ci + 1}`}>×</button>}
+                    {defs.length > 1 && <button className="link-btn" onClick={() => removeCol(ci)} aria-label={`Remove column ${ci + 1}`}>×</button>}
                   </th>
                 ) : (
-                  <th key={c.name} title={`${c.name} (${c.type}${c.date_format ? `, ${c.date_format}` : ""})`}>
-                    {c.name}{c.required ? " *" : ""}{c.key ? " 🔑" : ""}
-                    <small>{c.date_format || c.type}</small>
-                  </th>
+                  <th key={ci}>{d.name || "—"}<small>{TYPE_LABEL[d.type] || d.type}</small></th>
                 )
               ))}
               <th className="grid-no" />
@@ -299,12 +358,16 @@ export default function DataEntryView({ goUploads, isAdmin }) {
                       const bad = serverErrors[`${r}:${cols[c].name}`] || ((checked || touched[`${r}:${c}`]) && active ? cellError(cols[c], v) : "");
                       return (
                         <td key={c}>
-                          <input value={v} className={bad ? "grid-bad" : ""} title={bad} aria-label={`${cols[c].name}, row ${r + 1}`}
-                            onChange={(e) => setCell(r, c, e.target.value)} onBlur={() => setTouched((t) => (t[`${r}:${c}`] ? t : { ...t, [`${r}:${c}`]: 1 }))} onPaste={(e) => onPaste(e, r, c)} disabled={!editable} />
+                          <input value={v} className={bad ? "grid-bad" : ""} title={bad} aria-label={`${cols[c].name || `Column ${c + 1}`}, row ${r + 1}`}
+                            data-r={r} data-c={c}
+                            onChange={(e) => setCell(r, c, e.target.value)} onPaste={(e) => onPaste(e, r, c)} onKeyDown={(e) => onKey(e, r, c)}
+                            onFocus={(e) => { justFocused.current = true; e.target.select(); }}
+                            onMouseUp={(e) => { if (justFocused.current) { e.preventDefault(); justFocused.current = false; } }}
+                            onBlur={() => setTouched((t) => (t[`${r}:${c}`] ? t : { ...t, [`${r}:${c}`]: 1 }))} disabled={!canEdit} />
                         </td>
                       );
                     })}
-                    <td className="grid-no">{editable && <button className="link-btn" onClick={() => removeRow(r)} aria-label={`Remove row ${r + 1}`}>×</button>}</td>
+                    <td className="grid-no">{canEdit && <button className="link-btn" onClick={() => removeRow(r)} aria-label={`Remove row ${r + 1}`}>×</button>}</td>
                   </tr>
                 );
               })}
@@ -312,24 +375,25 @@ export default function DataEntryView({ goUploads, isAdmin }) {
           </table>
         </div>
         <div className="live-row">
-          <button className="subtle-action" onClick={() => addRows(5)} disabled={!editable}>+ Add 5 rows</button>
-          <button className="subtle-action" onClick={() => resetTable(cols)} disabled={!editable}>Clear</button>
-          {custom && <button className="subtle-action" onClick={addCustCol} disabled={!editable || custDefs.length >= 60}>+ Add column</button>}
-          <button className="button button-primary" onClick={send} disabled={!editable || !cols.length}>{busy ? "Checking and sending…" : "Send data"}</button>
+          <button className="grid-btn" onClick={() => addRows(5)} disabled={!canEdit}>+ Add 5 rows</button>
+          <button className="grid-btn" onClick={addCol} disabled={!canEdit || defs.length >= 60}>+ Add column</button>
+          <button className="grid-btn" onClick={() => resetSheet(cols.length)} disabled={!canEdit}>Clear</button>
+          <button className="grid-btn" onClick={save} disabled={!canEdit}>{isNew ? "Save table" : "Save columns"}</button>
+          <button className="grid-btn primary" onClick={send} disabled={!canEdit}>{busy ? "Sending…" : "Send data"}</button>
           {serverCount > 0 && <span className="live-error">{serverCount} problem{serverCount > 1 ? "s" : ""} to fix</span>}
         </div>
-        <p className="live-muted">* required · 🔑 identifies a record (must be unique) · dates use the format under each heading · up to 5,000 rows per send.</p>
+        <p className="live-muted">Dates use the format chosen for the column · up to 5,000 rows per send.</p>
       </section>
 
       <section className="portal-panel">
         <div className="portal-panel-head"><div>
-          <span className="portal-panel-kicker">AUDIT TRAIL</span><h2>Who entered what</h2>
+          <span className="portal-panel-kicker">AUDIT TRAIL</span><h2>Who did what</h2>
         </div><button className="subtle-action" onClick={loadHistory}>Refresh</button></div>
-        {history.length === 0 ? <p className="live-muted">No table entries yet.</p> : (
+        {history.length === 0 ? <p className="live-muted">Nothing yet.</p> : (
           <div className="live-table-wrap"><table className="live-table">
-            <thead><tr><th>When</th><th>Who</th><th>What</th><th>Details</th></tr></thead>
-            <tbody>{history.map((h, i) => (
-              <tr key={i}><td>{new Date(h.at).toLocaleString("en-GB")}</td><td>{h.who}</td><td>{ACTION[h.action] || h.action}</td><td>{h.detail}</td></tr>
+            <thead><tr><th>When</th><th>Who</th><th>Table</th><th>What</th><th>Details</th></tr></thead>
+            <tbody>{history.slice(0, 30).map((h, i) => (
+              <tr key={i}><td>{new Date(h.at).toLocaleString("en-GB")}</td><td>{h.who}</td><td>{h.table.replace(/_/g, " ")}</td><td>{ACTION[h.action] || h.action}</td><td>{h.detail}</td></tr>
             ))}</tbody>
           </table></div>
         )}
