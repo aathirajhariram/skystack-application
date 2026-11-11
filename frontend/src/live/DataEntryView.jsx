@@ -158,7 +158,7 @@ export default function DataEntryView({ goUploads, isAdmin }) {
     return (
       <section className="portal-panel">
         <div className="portal-panel-head"><div>
-          <span className="portal-panel-kicker">PRO AND ELITE</span><h2>Enter data in a table</h2>
+          <h2>Enter data in a table</h2>
           <p>Type or paste your data into a spreadsheet-style table and send it with one click, without preparing a file.
             This is included in the Pro and Elite plans. Contact us to upgrade.</p>
         </div></div>
