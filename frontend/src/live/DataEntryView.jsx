@@ -1,27 +1,50 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   entryHistory, entryLock, entryRelease, entryStatus, features as fetchFeatures,
-  sources as fetchSources, sourceColumns, submitGrid,
+  sources as fetchSources, sourceColumns, submitGrid, submitCustom,
 } from "../auth/api.js";
 
 const START_ROWS = 10;
 const HEARTBEAT_MS = 120000;       // while editing: renew the slot every 2 minutes
 const WAIT_POLL_MS = 15000;        // while someone else edits: look again every 15 seconds
 const emptyRow = (n) => Array(n).fill("");
+const CUSTOM = "__custom__";                      // the "My own table" choice in the Table list
+const TYPE_OPTIONS = [
+  ["text", "Text"], ["whole", "Whole number"], ["decimal", "Decimal number"],
+  ["date:dd-MM-yyyy", "Date (dd-MM-yyyy)"], ["date:yyyy-MM-dd", "Date (yyyy-MM-dd)"],
+  ["date:dd/MM/yyyy", "Date (dd/MM/yyyy)"], ["date:MM/dd/yyyy", "Date (MM/dd/yyyy)"], ["yesno", "Yes / No"],
+];
+const newDef = () => ({ name: "", type: "text" });
+function defToCol(d) {                            // what the cell checks need to know about a column
+  const [kind, fmt] = d.type.split(":");
+  const type = { text: "string", whole: "bigint", decimal: "decimal(18,4)", date: "date", yesno: "boolean" }[kind];
+  return { name: d.name.trim(), type, date_format: fmt || null, key: false, required: false };
+}
+const defToPayload = (d) => { const [kind, fmt] = d.type.split(":"); return { name: d.name.trim(), type: kind, decimals: 4, date_format: fmt || null }; };
 const ACTION = { GRID_SENT: "Sent data", GRID_REJECTED: "Rejected (validation)", GRID_TAKEOVER: "Editing slot released by admin", GRID_LOCK: "Started editing" };
 
 // ---- column-level checks by data type (the server repeats them; this is for instant feedback) ----
 function validDate(v, fmt) {
-  const parts = fmt === "dd-MM-yyyy" ? v.match(/^(\d{2})-(\d{2})-(\d{4})$/) : (!fmt || fmt === "yyyy-MM-dd") ? v.match(/^(\d{4})-(\d{2})-(\d{2})$/) : null;
-  if (!parts) return fmt && fmt !== "dd-MM-yyyy" && fmt !== "yyyy-MM-dd";        // other formats: the server decides
-  const [d, mo, y] = fmt === "dd-MM-yyyy" ? [+parts[1], +parts[2], +parts[3]] : [+parts[3], +parts[2], +parts[1]];
-  const dt = new Date(y, mo - 1, d);
-  return dt.getFullYear() === y && dt.getMonth() === mo - 1 && dt.getDate() === d;
+  const f = fmt || "yyyy-MM-dd";
+  if (/[A-Za-z]/.test(f.replace(/yyyy|MM|dd|HH|mm|ss/g, ""))) return true;        // unusual format: the server decides
+  const order = [];
+  const re = new RegExp("^" + f.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/yyyy|MM|dd|HH|mm|ss/g, (t) => { order.push(t); return t === "yyyy" ? "(\\d{4})" : "(\\d{2})"; }) + "$");
+  const m = v.match(re);
+  if (!m) return false;
+  const p = {};
+  order.forEach((t, i) => { p[t] = +m[i + 1]; });
+  if (p.yyyy !== undefined && p.MM !== undefined && p.dd !== undefined) {
+    const dt = new Date(p.yyyy, p.MM - 1, p.dd);
+    if (dt.getFullYear() !== p.yyyy || dt.getMonth() !== p.MM - 1 || dt.getDate() !== p.dd) return false;
+  }
+  if ((p.HH !== undefined && p.HH > 23) || (p.mm !== undefined && p.mm > 59) || (p.ss !== undefined && p.ss > 59)) return false;
+  return true;
 }
 function cellError(col, value) {
   const v = value.trim();
   if (!v) return col.required ? "Required" : "";
   const t = (col.type || "string").toLowerCase();
+  if (t === "timestamp" && !col.date_format) return "";                              // server checks it
   if (t === "date" || t === "timestamp") return validDate(v, col.date_format) ? "" : `Use ${col.date_format || "yyyy-MM-dd"}`;
   if (t === "int" || t === "bigint") return /^-?\d+$/.test(v) ? "" : "Whole number expected";
   if (t === "double") return Number.isFinite(Number(v)) ? "" : "Number expected";
@@ -41,7 +64,7 @@ export default function DataEntryView({ goUploads, isAdmin }) {
   const [allowed, setAllowed] = useState(null);
   const [sources, setSources] = useState([]);
   const [source, setSource] = useState("");
-  const [cols, setCols] = useState([]);
+  const [fetchedCols, setCols] = useState([]);
   const [rows, setRows] = useState([]);
   const [lock, setLock] = useState({ mine: false, free: true, holder: null });
   const [checked, setChecked] = useState(false);       // red cells only after the first "Send"
@@ -49,24 +72,31 @@ export default function DataEntryView({ goUploads, isAdmin }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);                 // { ok, text }
   const [history, setHistory] = useState([]);
+  const [custName, setCustName] = useState("");        // "My own table": its name ...
+  const [custDefs, setCustDefs] = useState([newDef(), newDef(), newDef()]);   // ... and its columns (name + data type)
+  const [touched, setTouched] = useState({});          // cells the user has already left -> checked straight away
+  const custom = source === CUSTOM;
+  const custCols = useMemo(() => custDefs.map(defToCol), [custDefs]);   // always in step with the headings
+  const cols = custom ? custCols : fetchedCols;
   const mineRef = useRef(false);
   mineRef.current = lock.mine;
 
   const loadHistory = useCallback(() => entryHistory().then(setHistory).catch(() => {}), []);
   useEffect(() => {
     fetchFeatures().then((f) => setAllowed(f.data_entry)).catch(() => setAllowed(false));
-    fetchSources().then((s) => { setSources(s); setSource((cur) => cur || s[0] || ""); }).catch((e) => setMsg({ ok: false, text: e.message }));
+    fetchSources().then((s) => { setSources(s); setSource((cur) => cur || s[0] || CUSTOM); }).catch((e) => setMsg({ ok: false, text: e.message }));
     loadHistory();
   }, [loadHistory]);
 
   const resetTable = useCallback((c) => {
     setRows(Array.from({ length: START_ROWS }, () => emptyRow(c.length)));
-    setChecked(false); setServerErrors({});
+    setChecked(false); setServerErrors({}); setTouched({});
   }, []);
 
   // columns of the chosen data type
   useEffect(() => {
     if (!allowed || !source) return undefined;
+    if (source === CUSTOM) { resetTable(custDefs); setMsg(null); return undefined; }
     let alive = true;
     sourceColumns(source).then((c) => { if (alive) { setCols(c); resetTable(c); setMsg(null); } })
       .catch((e) => alive && setMsg({ ok: false, text: e.message }));
@@ -76,6 +106,7 @@ export default function DataEntryView({ goUploads, isAdmin }) {
   // the editing slot: while someone else holds it we only watch; while we hold it we keep renewing it
   useEffect(() => {
     if (!allowed || !source) return undefined;
+    if (source === CUSTOM) { setLock({ mine: false, free: true, holder: null }); return undefined; }   // own tables need no slot
     let alive = true;
     let timer;
     setLock({ mine: false, free: true, holder: null });
@@ -125,7 +156,15 @@ export default function DataEntryView({ goUploads, isAdmin }) {
     );
   }
 
-  const editable = lock.mine && !busy;
+  const editable = (lock.mine || custom) && !busy;
+  const setDef = (j, patch) => setCustDefs((d) => d.map((x, i) => (i === j ? { ...x, ...patch } : x)));
+  const addCustCol = () => { setCustDefs((d) => [...d, newDef()]); setRows((rs) => rs.map((r) => [...r, ""])); };
+  const removeCustCol = (j) => {
+    if (custDefs.length < 2) return;
+    setCustDefs((d) => d.filter((_, i) => i !== j)); setRows((rs) => rs.map((r) => r.filter((_, i) => i !== j)));
+    setServerErrors({}); setTouched({});
+  };
+  const fileName = `${custName.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "table_name"}_${new Date().toISOString().slice(0, 19).replace(/[-:]/g, "").replace("T", "_")}.csv`;
   const setCell = (r, c, v) => {
     setRows((rs) => rs.map((row, i) => (i === r ? row.map((x, j) => (j === c ? v : x)) : row)));
     setServerErrors((e) => { if (!Object.keys(e).length) return e; const n = { ...e }; delete n[`${r}:${cols[c].name}`]; return n; });
@@ -156,11 +195,18 @@ export default function DataEntryView({ goUploads, isAdmin }) {
     setChecked(true); setMsg(null); setServerErrors({});
     if (!filledIdx.length) return setMsg({ ok: false, text: "Add at least one row first." });
     if (localErrors) return setMsg({ ok: false, text: `${localErrors} cell${localErrors > 1 ? "s need" : " needs"} fixing (marked in red). Nothing was sent.` });
+    if (custom) {
+      if (!custName.trim()) return setMsg({ ok: false, text: "Give your table a name first." });
+      const names = custDefs.map((d) => d.name.trim().toLowerCase());
+      if (names.some((n) => !n)) return setMsg({ ok: false, text: "Every column needs a name (type it in the column heading)." });
+      if (new Set(names).size !== names.length) return setMsg({ ok: false, text: "Two columns have the same name." });
+    }
     setBusy(true);
     try {
-      const res = await submitGrid(source, filledIdx.map((i) => rows[i]));
-      setMsg({ ok: true, text: `${res.rows} row${res.rows > 1 ? "s" : ""} sent. Processing starts shortly.` });
-      setLock({ mine: false, free: true, holder: null });                  // the server released the slot
+      const picked = filledIdx.map((i) => rows[i]);
+      const res = custom ? await submitCustom(custName.trim(), custDefs.map(defToPayload), picked) : await submitGrid(source, picked);
+      setMsg({ ok: true, text: `${res.rows} row${res.rows > 1 ? "s" : ""} sent${custom ? ` as ${res.uploaded}` : ""}. Processing starts shortly.` });
+      if (!custom) setLock({ mine: false, free: true, holder: null });      // the server released the slot
       resetTable(cols); loadHistory();
     } catch (e) {
       if (e.code === "validation_failed" && e.data?.errors) {
@@ -180,7 +226,9 @@ export default function DataEntryView({ goUploads, isAdmin }) {
     setBusy(false);
   }
 
-  const banner = lock.mine
+  const banner = custom
+    ? <p className="grid-banner mine">Your own table: name it, then name each column and choose its data type in the column headings. Everything you type is checked by data type, and only you see this sheet until you press <b>Send data</b>.</p>
+    : lock.mine
     ? <p className="grid-banner mine">You are editing this table. Others must wait until you send or stop. The slot is renewed while this page is open.</p>
     : lock.free
       ? <p className="grid-banner">Press <b>Start editing</b> to reserve this table. Only one person can enter data at a time.</p>
@@ -201,23 +249,42 @@ export default function DataEntryView({ goUploads, isAdmin }) {
           <label className="live-field">Table
             <select value={source} onChange={(e) => setSource(e.target.value)} disabled={busy || lock.mine}>
               {sources.map((s) => <option key={s} value={s}>{s.replace(/_/g, " ").replace(/^\w/, (ch) => ch.toUpperCase())}</option>)}
+              <option value={CUSTOM}>✎ My own table…</option>
             </select>
           </label>
-          {!lock.mine && lock.free && <button className="button button-primary" onClick={startEditing}>Start editing</button>}
-          {!lock.mine && !lock.free && isAdmin && <button className="subtle-action" onClick={takeOver}>Take over (admin)</button>}
-          {lock.mine && <button className="subtle-action" onClick={stopEditing} disabled={busy}>Stop editing</button>}
+          {!custom && !lock.mine && lock.free && <button className="button button-primary" onClick={startEditing} disabled={!source}>Start editing</button>}
+          {!custom && !lock.mine && !lock.free && isAdmin && <button className="subtle-action" onClick={takeOver}>Take over (admin)</button>}
+          {!custom && lock.mine && <button className="subtle-action" onClick={stopEditing} disabled={busy}>Stop editing</button>}
           <span className="live-muted">{filledIdx.length} row{filledIdx.length === 1 ? "" : "s"} filled</span>
         </div>
         {banner}
+        {custom && (
+          <div className="live-row">
+            <label className="live-field">Table name
+              <input type="text" value={custName} maxLength={60} placeholder="e.g. Campaigns" onChange={(e) => setCustName(e.target.value)} disabled={busy} />
+            </label>
+            <span className="live-muted">Saved as <b>{fileName}</b> (date and time in UTC)</span>
+          </div>
+        )}
         <div className="grid-wrap">
           <table className="grid-table">
             <thead><tr>
               <th className="grid-no">#</th>
-              {cols.map((c) => (
-                <th key={c.name} title={`${c.name} (${c.type}${c.date_format ? `, ${c.date_format}` : ""})`}>
-                  {c.name}{c.required ? " *" : ""}{c.key ? " 🔑" : ""}
-                  <small>{c.date_format || c.type}</small>
-                </th>
+              {cols.map((c, ci) => (
+                custom ? (
+                  <th key={ci} className="grid-custom-head">
+                    <input value={custDefs[ci].name} placeholder="Column name" maxLength={60} aria-label={`Column ${ci + 1} name`} onChange={(e) => setDef(ci, { name: e.target.value })} />
+                    <select value={custDefs[ci].type} aria-label={`Column ${ci + 1} data type`} onChange={(e) => setDef(ci, { type: e.target.value })}>
+                      {TYPE_OPTIONS.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                    </select>
+                    {custDefs.length > 1 && <button className="link-btn" onClick={() => removeCustCol(ci)} aria-label={`Remove column ${ci + 1}`}>×</button>}
+                  </th>
+                ) : (
+                  <th key={c.name} title={`${c.name} (${c.type}${c.date_format ? `, ${c.date_format}` : ""})`}>
+                    {c.name}{c.required ? " *" : ""}{c.key ? " 🔑" : ""}
+                    <small>{c.date_format || c.type}</small>
+                  </th>
+                )
               ))}
               <th className="grid-no" />
             </tr></thead>
@@ -228,11 +295,11 @@ export default function DataEntryView({ goUploads, isAdmin }) {
                   <tr key={r}>
                     <td className="grid-no">{r + 1}</td>
                     {row.map((v, c) => {
-                      const bad = serverErrors[`${r}:${cols[c].name}`] || (checked && active ? cellError(cols[c], v) : "");
+                      const bad = serverErrors[`${r}:${cols[c].name}`] || ((checked || touched[`${r}:${c}`]) && active ? cellError(cols[c], v) : "");
                       return (
                         <td key={c}>
                           <input value={v} className={bad ? "grid-bad" : ""} title={bad} aria-label={`${cols[c].name}, row ${r + 1}`}
-                            onChange={(e) => setCell(r, c, e.target.value)} onPaste={(e) => onPaste(e, r, c)} disabled={!editable} />
+                            onChange={(e) => setCell(r, c, e.target.value)} onBlur={() => setTouched((t) => (t[`${r}:${c}`] ? t : { ...t, [`${r}:${c}`]: 1 }))} onPaste={(e) => onPaste(e, r, c)} disabled={!editable} />
                         </td>
                       );
                     })}
@@ -246,6 +313,7 @@ export default function DataEntryView({ goUploads, isAdmin }) {
         <div className="live-row">
           <button className="subtle-action" onClick={() => addRows(5)} disabled={!editable}>+ Add 5 rows</button>
           <button className="subtle-action" onClick={() => resetTable(cols)} disabled={!editable}>Clear</button>
+          {custom && <button className="subtle-action" onClick={addCustCol} disabled={!editable || custDefs.length >= 60}>+ Add column</button>}
           <button className="button button-primary" onClick={send} disabled={!editable || !cols.length}>{busy ? "Checking and sending…" : "Send data"}</button>
           {serverCount > 0 && <span className="live-error">{serverCount} problem{serverCount > 1 ? "s" : ""} to fix</span>}
         </div>
