@@ -48,19 +48,17 @@ export const updateUser = (id, patch) => request(`/admin/users/${id}`, { method:
 export const resetPassword = (id) => request(`/admin/users/${id}/reset-password`, { method: "POST" });
 export const activityLog = () => request("/admin/activity");
 
-export const sources = () => request("/portal/sources");
 export const runs = () => request("/portal/runs");
 export const dashboard = () => request("/portal/dashboard");
-export const templateUrl = (source) => `${API}/portal/sources/${encodeURIComponent(source)}/template`;
-export const uploadFile = (source, file) => {
+export const tables = () => request("/portal/tables");
+export const uploadFile = (table, file) => {
   const form = new FormData();
+  form.append("table", table);
   form.append("file", file);
-  return request(`/portal/upload/${encodeURIComponent(source)}`, { method: "POST", form });
+  return request("/portal/upload", { method: "POST", form });
 };
 
 export const features = () => request("/portal/features");
-export const sourceColumns = (source) => request(`/portal/sources/${encodeURIComponent(source)}/columns`);
-export const submitGrid = (source, rows) => request(`/portal/entry/${encodeURIComponent(source)}`, { method: "POST", json: { rows } });
 export const entryStatus = (source) => request(`/portal/entry/${encodeURIComponent(source)}/lock`);
 export const entryLock = (source) => request(`/portal/entry/${encodeURIComponent(source)}/lock`, { method: "POST", json: {} });
 export const entryRelease = (source, force = false) => request(`/portal/entry/${encodeURIComponent(source)}/release?force=${force}`, { method: "POST", json: {} });
@@ -75,5 +73,6 @@ export const subscribe = (payload) => request("/public/subscribe", { method: "PO
 export const getVisibility = (id) => request(`/admin/users/${id}/visibility`);
 export const setVisibility = (id, hidden) => request(`/admin/users/${id}/visibility`, { method: "PUT", json: { hidden } });
 
-// the client's own table (name + columns typed in the browser): validated, then delivered as one CSV
-export const submitCustom = (name, columns, rows) => request("/portal/entry-custom", { method: "POST", json: { name, columns, rows } });
+// table entry: save a table (name + columns), or check the rows by data type and send them as one CSV
+export const saveTable = (name, columns) => request("/portal/tables", { method: "POST", json: { name, columns } });
+export const sendEntry = (name, columns, rows) => request("/portal/entry", { method: "POST", json: { name, columns, rows } });
