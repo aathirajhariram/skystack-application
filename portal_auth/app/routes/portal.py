@@ -3,10 +3,12 @@ import io
 import re
 
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 
 from app import activity, db, deps
 from app.config import settings
-from app.services import dashboard, storage, visibility
+from app.services import dashboard, entry, storage, visibility
 
 router = APIRouter(prefix="/portal", tags=["portal"])
 
@@ -55,6 +57,119 @@ async def upload(source: str, file: UploadFile = File(...), user: dict = Depends
     stored = storage.put_file(user["client_code"], source, re.sub(r"[^A-Za-z0-9._-]", "_", name), data)
     activity.record(user["client_id"], user["user_id"], user["email"], "UPLOAD", f"{source}: {name}")
     return {"uploaded": stored, "source": source}
+
+
+# ---- data-entry table (Pro / Elite): the table becomes a CSV and goes through the SAME pipeline as an uploaded file ----
+# One person at a time per data type (an editing lock), validation per column data type, and a full audit trail.
+GRID_PLANS = {"pro", "elite"}
+GRID_MAX_ROWS = 5000
+
+
+def _grid_allowed(user: dict) -> bool:
+    """Pro and Elite. A client with no plan (created by staff in the Ops console) is allowed too."""
+    row = db.query("SELECT PlanCode FROM cfg.Client WHERE ClientId = ?", (user["client_id"],))
+    plan = (row[0]["PlanCode"] if row else None)
+    return plan is None or str(plan).lower() in GRID_PLANS
+
+
+def _entry_source(user: dict, source: str) -> dict:
+    if not _grid_allowed(user):
+        raise HTTPException(403, "plan_required")
+    src = _source_or_404(user["client_code"], source)
+    if source in visibility.hidden_sources(user):
+        raise HTTPException(404, "Unknown data source.")
+    return src
+
+
+def _columns(source_id: int) -> list:
+    rows = db.query("SELECT SourceColumn, DataType, DateFormat, IsBusinessKey, IsNullable FROM cfg.ColumnMapping "
+                    "WHERE SourceId = ? ORDER BY ColumnOrder", (source_id,))
+    return [{"name": c["SourceColumn"], "type": c["DataType"], "date_format": c["DateFormat"],
+             "key": bool(c["IsBusinessKey"]), "required": (not c["IsNullable"]) or bool(c["IsBusinessKey"])} for c in rows]
+
+
+@router.get("/features")
+def features(user: dict = Depends(deps.active_user)):
+    return {"data_entry": _grid_allowed(user)}
+
+
+@router.get("/sources/{source}/columns")
+def source_columns(source: str, user: dict = Depends(deps.upload_user)):
+    return _columns(_entry_source(user, source)["SourceId"])
+
+
+@router.get("/entry/{source}/lock")
+def entry_status(source: str, user: dict = Depends(deps.upload_user)):
+    """Who holds the editing slot right now (read only - does not take it)."""
+    _entry_source(user, source)
+    return entry.current(user["client_id"], source, user["user_id"])
+
+
+@router.post("/entry/{source}/lock", dependencies=[Depends(deps.require_csrf_header)])
+def entry_lock(source: str, user: dict = Depends(deps.upload_user)):
+    """Asks for the editing slot (also renews it). If someone else holds it, the caller waits and asks again."""
+    _entry_source(user, source)
+    before = entry.current(user["client_id"], source, user["user_id"])
+    state = entry.acquire(user["client_id"], source, user)
+    if state["mine"] and not before["mine"]:
+        activity.record(user["client_id"], user["user_id"], user["email"], "GRID_LOCK", f"{source}: started editing")
+    return state
+
+
+@router.post("/entry/{source}/release", dependencies=[Depends(deps.require_csrf_header)])
+def entry_release(source: str, force: bool = False, user: dict = Depends(deps.upload_user)):
+    _entry_source(user, source)
+    if force and not user["permissions"]["admin"]:
+        raise HTTPException(403, "forbidden")
+    held = entry.release(user["client_id"], source, user["user_id"], force=force)
+    if held and force and held["UserEmail"].lower() != user["email"].lower():
+        activity.record(user["client_id"], user["user_id"], user["email"], "GRID_TAKEOVER",
+                        f"{source}: released the lock of {held['UserEmail']}")
+    return {"released": True}
+
+
+class GridBody(BaseModel):
+    rows: list[list[str]] = Field(..., max_length=GRID_MAX_ROWS)
+
+
+@router.post("/entry/{source}", dependencies=[Depends(deps.require_csrf_header)])
+def submit_grid(source: str, body: GridBody, user: dict = Depends(deps.upload_user)):
+    src = _entry_source(user, source)
+    state = entry.current(user["client_id"], source, user["user_id"])
+    if not state["mine"]:                                   # only the person who holds the editing slot may send
+        raise HTTPException(409, "lock_required" if state["free"] else "locked_by_other")
+    cols = _columns(src["SourceId"])
+    rows = [[(c or "").strip() for c in r] for r in body.rows]
+    rows = [r for r in rows if any(r)]                      # drop completely empty lines
+    if not rows:
+        raise HTTPException(400, "There is no data to send yet.")
+    if any(len(r) != len(cols) for r in rows):
+        raise HTTPException(400, "The table does not match the columns of this data type.")
+    errors = entry.validate(cols, rows)                     # column-level validation by data type, checked again here
+    if errors:
+        activity.record(user["client_id"], user["user_id"], user["email"], "GRID_REJECTED",
+                        f"{source}: {len(errors)} validation problem(s) in {len(rows)} rows")
+        return JSONResponse(status_code=422, content={"detail": "validation_failed", "errors": errors})
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow([c["name"] for c in cols])
+    w.writerows(rows)
+    data = buf.getvalue().encode("utf-8")
+    if len(data) > settings.max_upload_mb * 1024 * 1024:
+        raise HTTPException(413, f"The data is larger than {settings.max_upload_mb} MB.")
+    stored = storage.put_file(user["client_code"], source, f"entry_by_{str(user['user_id'])[:8]}.csv", data)
+    activity.record(user["client_id"], user["user_id"], user["email"], "GRID_SENT", f"{source}: {len(rows)} rows -> {stored}")
+    entry.release(user["client_id"], source, user["user_id"])   # slot is free for the next person
+    return {"uploaded": stored, "source": source, "rows": len(rows)}
+
+
+@router.get("/entry-history")
+def entry_history(user: dict = Depends(deps.upload_user)):
+    """Who entered what and when (the audit trail for table entry), newest first."""
+    rows = db.query("SELECT TOP 30 Actor, Action, Detail, At FROM portal.ActivityLog "
+                    "WHERE ClientId = ? AND Action IN ('GRID_SENT','GRID_REJECTED','GRID_TAKEOVER','GRID_LOCK') "
+                    "ORDER BY At DESC", (user["client_id"],))
+    return [{"who": r["Actor"], "action": r["Action"], "detail": r["Detail"], "at": r["At"].isoformat() + "Z"} for r in rows]
 
 
 def _friendly(status: str, message: str) -> str:
