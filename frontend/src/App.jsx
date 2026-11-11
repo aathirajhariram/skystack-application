@@ -2162,6 +2162,56 @@ function Specialists() {
                 <span>Reporting</span>
               </div>
             </article>
+            <article className="person-card">
+              <div className="person-header">
+                <div className="person-avatar avatar-sharukhan">
+                  <img src="/images/Sharukhan.jpg" alt="Sharukhan" />
+                </div>
+
+                <div className="person-meta">
+                  <h3>Mohammad Sharukhan Sulbikkar</h3>
+                  <span className="person-role">Marketing Manager</span>
+                  <span className="person-location">SA · Saudi Arabia</span>
+                </div>
+              </div>
+
+              <p>
+                Develops and executes marketing strategies, manages campaigns,
+                strengthens brand visibility, and analyzes market trends to drive
+                customer engagement and business growth.
+              </p>
+
+              <div className="person-tags">
+                <span>Marketing Strategy</span>
+                <span>Brand Development</span>
+                <span>Digital Marketing</span>
+              </div>
+            </article>
+            <article className="person-card">
+              <div className="person-header">
+                <div className="person-avatar avatar-suheir">
+                  <img src="/images/Suhier.jpg" alt="Suheir" />
+                </div>
+
+                <div className="person-meta">
+                  <h3>Suheir</h3>
+                  <span className="person-role">Field Manager</span>
+                  <span className="person-location">IN · India</span>
+                </div>
+              </div>
+
+              <p>
+                Oversees field operations, coordinates on-site activities, manages
+                field teams, and ensures smooth execution of daily operations while
+                maintaining service quality and achieving business targets.
+              </p>
+
+              <div className="person-tags">
+                <span>Field Operations</span>
+                <span>Team Management</span>
+                <span>Customer Service</span>
+              </div>
+            </article>
           </div>
 
           <div className="specialist-grid">
