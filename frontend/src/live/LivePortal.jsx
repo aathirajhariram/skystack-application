@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { KeyRound, LayoutDashboard, LogOut, Menu, ShieldCheck, Table, Upload, Users, X } from "lucide-react";
 import { useAuth } from "../auth/AuthContext.jsx";
+import { features } from "../auth/api.js";
+import AssistantChat from "./AssistantChat.jsx";
 import AccountView from "./AccountView.jsx";
 import AdminView from "./AdminView.jsx";
 import ChangePasswordForm from "./ChangePasswordForm.jsx";
@@ -16,6 +18,8 @@ export default function LivePortal({ logo }) {
   const navigate = useNavigate();
   const [tab, setTab] = useState("Dashboard");
   const [menuOpen, setMenuOpen] = useState(false);   // phone: slide-in menu
+  const [hasAssistant, setHasAssistant] = useState(false);
+  useEffect(() => { features().then((f) => setHasAssistant(!!f.assistant)).catch(() => {}); }, []);
 
   if (user.must_change_password) {                           // first sign-in with the one-time password
     return (
@@ -83,6 +87,7 @@ export default function LivePortal({ logo }) {
           {tab === "Admin" && user.permissions.admin && <AdminView me={user} />}
         </div>
       </main>
+      {hasAssistant && <AssistantChat />}
     </div>
   );
 }
