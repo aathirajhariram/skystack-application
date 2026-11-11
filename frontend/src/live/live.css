@@ -1,4 +1,4 @@
-/* Signed-in workspace additions (the shell itself reuses the portal-* classes in styles.css) */ 
+/* Signed-in workspace additions (the shell itself reuses the portal-* classes in styles.css) */
 .live-center {
   min-height: 100vh;
   display: grid;
@@ -626,4 +626,20 @@
   font-size: 13px;
   background: #fff;
   min-width: 240px;
+}
+
+/* ---- table row: buttons sit on the same line as the Table box ---- */
+.grid-panel .live-row {
+  align-items: flex-end;
+}
+.grid-panel .live-field select,
+.grid-panel .live-field input[type="text"] {
+  height: 40px;
+  box-sizing: border-box;
+}
+.grid-panel .live-row:has(.live-field) .grid-btn {
+  height: 40px;
+}
+.grid-panel .live-row:has(.live-field) > .live-muted {
+  padding-bottom: 12px;
 }
