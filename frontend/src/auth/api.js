@@ -74,3 +74,6 @@ export const subscribe = (payload) => request("/public/subscribe", { method: "PO
 // ---- per-employee dashboard visibility (admin) ----
 export const getVisibility = (id) => request(`/admin/users/${id}/visibility`);
 export const setVisibility = (id, hidden) => request(`/admin/users/${id}/visibility`, { method: "PUT", json: { hidden } });
+
+// the client's own table (name + columns typed in the browser): validated, then delivered as one CSV
+export const submitCustom = (name, columns, rows) => request("/portal/entry-custom", { method: "POST", json: { name, columns, rows } });
