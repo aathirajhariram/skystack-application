@@ -586,3 +586,44 @@
 .grid-custom-head .link-btn {
   float: right;
 }
+
+/* ---- table screen buttons: small, same type size as the table ---- */
+.grid-btn {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 8px 13px;
+  min-height: 34px;
+  border: 1px solid #ccd7e0;
+  border-radius: 7px;
+  background: #fff;
+  color: #183047;
+  cursor: pointer;
+}
+.grid-btn:hover:not(:disabled) {
+  border-color: #246b98;
+  color: #246b98;
+}
+.grid-btn.primary {
+  background: #246b98;
+  border-color: #246b98;
+  color: #fff;
+}
+.grid-btn.primary:hover:not(:disabled) {
+  background: #1c5b84;
+  color: #fff;
+}
+.grid-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.live-field input[type="text"] {
+  border: 1px solid var(--line, #d9e1ea);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+  background: #fff;
+  min-width: 240px;
+}
