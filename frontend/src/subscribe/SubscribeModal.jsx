@@ -7,6 +7,9 @@ import "./subscribe.css";
 export const openSubscribe = (plan) => window.dispatchEvent(new CustomEvent("skystack:subscribe", { detail: { plan } }));
 
 const FALLBACK_INDUSTRIES = ["logistics", "manufacturing", "real_estate", "construction", "marketing", "advertising", "legal"];
+// The plan price is the price of one billing period, which lasts p.months months (3 by default).
+const months = (p) => p.months || 3;
+const periodLabel = (p) => (months(p) === 1 ? "month" : `${months(p)} months`);
 const money = (p) => new Intl.NumberFormat("en-GB", { style: "currency", currency: p.currency, maximumFractionDigits: 0 }).format(p.price);
 // Shown when the plans service cannot be reached (for example before the backend is deployed).
 // The live prices and features always come from cfg.Plan once the API answers.
@@ -101,7 +104,7 @@ export default function SubscribeHost() {
                   <button type="button" className={`sub-cta ${p.popular ? "sub-cta-primary" : "sub-cta-outline"}`} onClick={() => pick(p.code)}>
                     {p.popular && <Sparkles size={15} />} Subscribe to {p.name}
                   </button>
-                  <div className="sub-price"><sup>€</sup>{Math.round(p.price)}<small> / month</small></div>
+                  <div className="sub-price"><sup>€</sup>{Math.round(p.price)}<small> / {periodLabel(p)}</small></div>
                   <ul>
                     {p.features.map((f, i) => { const Icon = FEATURE_ICONS[i % FEATURE_ICONS.length]; return <li key={f}><Icon size={17} />{f}</li>; })}
                   </ul>
@@ -114,7 +117,7 @@ export default function SubscribeHost() {
           <form onSubmit={submit}>
             <button type="button" className="sub-back" onClick={() => setStep("plans")}><ArrowLeft size={15} /> All plans</button>
             <h2 id="sub-title">Subscribe to {chosen?.name}</h2>
-            <p className="sub-lead">{chosen ? `${money(chosen)} / month` : ""} · {chosen?.tagline}</p>
+            <p className="sub-lead">{chosen ? `${money(chosen)} / ${periodLabel(chosen)}` : ""} · {chosen?.tagline}</p>
             <div className="sub-fields">
               <label>Company<input ref={first} value={form.company_name} onChange={set("company_name")} required minLength={2} autoComplete="organization" /></label>
               <label>Your name<input value={form.contact_name} onChange={set("contact_name")} required minLength={2} autoComplete="name" /></label>
