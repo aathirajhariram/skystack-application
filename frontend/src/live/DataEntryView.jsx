@@ -304,7 +304,6 @@ export default function DataEntryView({ goUploads, isAdmin }) {
     <>
       <section className="portal-panel grid-panel">
         <div className="portal-panel-head"><div>
-          <span className="portal-panel-kicker">PRO AND ELITE</span>
           <h2>Enter data in a table</h2>
           <p>Type or paste rows from Excel. Every column is checked against its data type before anything is sent.</p>
         </div></div>
