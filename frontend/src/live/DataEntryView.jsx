@@ -10,7 +10,7 @@ const emptyRow = (n) => Array(n).fill("");
 const NEW = "__new__";             // "+ New table" in the list
 const ACTION = {
   GRID_SENT: "Sent data", GRID_REJECTED: "Rejected (validation)", GRID_TAKEOVER: "Editing slot released by admin",
-  GRID_LOCK: "Started editing", TABLE_SAVED: "Saved the table", UPLOAD: "Uploaded a file",
+  GRID_LOCK: "Started editing", GRID_STOP: "Stopped editing", TABLE_SAVED: "Saved the table", UPLOAD: "Uploaded a file",
 };
 const TYPE_OPTIONS = [
   ["text", "Text"], ["whole", "Whole number"], ["decimal", "Decimal number"],
