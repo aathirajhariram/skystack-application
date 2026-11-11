@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { KeyRound, LayoutDashboard, LogOut, ShieldCheck, Table, Upload, Users } from "lucide-react";
+import { KeyRound, LayoutDashboard, LogOut, Menu, ShieldCheck, Table, Upload, Users, X } from "lucide-react";
 import { useAuth } from "../auth/AuthContext.jsx";
 import AccountView from "./AccountView.jsx";
 import AdminView from "./AdminView.jsx";
@@ -15,6 +15,7 @@ export default function LivePortal({ logo }) {
   const { user, signOut, refresh } = useAuth();
   const navigate = useNavigate();
   const [tab, setTab] = useState("Dashboard");
+  const [menuOpen, setMenuOpen] = useState(false);   // phone: slide-in menu
 
   if (user.must_change_password) {                           // first sign-in with the one-time password
     return (
@@ -44,7 +45,8 @@ export default function LivePortal({ logo }) {
   }[tab];
 
   return (
-    <div className="portal-shell">
+    <div className={menuOpen ? "portal-shell menu-open" : "portal-shell"}>
+      <div className="menu-backdrop" onClick={() => setMenuOpen(false)} />
       <aside className="portal-sidebar">
         <div className="portal-brand">{logo}</div>
         <div className="portal-org">
@@ -54,7 +56,7 @@ export default function LivePortal({ logo }) {
         <div className="portal-nav-label">WORKSPACE</div>
         <nav className="portal-side-nav">
           {tabs.map(([name, Icon]) => (
-            <button key={name} className={tab === name ? "portal-nav-item selected" : "portal-nav-item"} onClick={() => setTab(name)}>
+            <button key={name} className={tab === name ? "portal-nav-item selected" : "portal-nav-item"} onClick={() => { setTab(name); setMenuOpen(false); }}>
               <Icon size={17} /><span>{name}</span>
             </button>
           ))}
@@ -68,6 +70,7 @@ export default function LivePortal({ logo }) {
       </aside>
       <main className="portal-main">
         <header className="portal-topbar">
+          <button className="menu-toggle" aria-label={menuOpen ? "Close menu" : "Open menu"} onClick={() => setMenuOpen((o) => !o)}>{menuOpen ? <X size={22} /> : <Menu size={22} />}</button>
           <div className="portal-breadcrumb"><span>Client workspace</span><span>/</span><strong>{tab}</strong></div>
           <div className="portal-top-actions"><span className="secure-indicator"><ShieldCheck size={15} /> Secure workspace</span></div>
         </header>
