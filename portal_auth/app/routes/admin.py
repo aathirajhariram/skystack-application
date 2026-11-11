@@ -1,3 +1,4 @@
+import logging
 import re
 from typing import Optional
 
@@ -72,7 +73,7 @@ def invite_user(body: NewUser, admin: dict = Depends(deps.admin_user)):
         raise HTTPException(400, "Enter a valid email address.")
     if body.role not in ROLES:
         raise HTTPException(400, "Unknown role.")
-    limit = db.query("SELECT p.MaxUsers, p.Name FROM cfg.Client c JOIN cfg.Plan p ON p.PlanCode = c.PlanCode WHERE c.ClientId = ?",
+    limit = db.query("SELECT p.MaxUsers, p.Name FROM cfg.Client c JOIN cfg.[Plan] p ON p.PlanCode = c.PlanCode WHERE c.ClientId = ?",
                      (admin["client_id"],))
     if limit:
         used = db.query("SELECT COUNT(*) AS n FROM portal.PortalUser WHERE ClientId = ?", (admin["client_id"],))[0]["n"]
@@ -84,8 +85,16 @@ def invite_user(body: NewUser, admin: dict = Depends(deps.admin_user)):
                         (admin["client_id"], email, body.display_name.strip(), body.role, admin["email"]))
     except pyodbc.IntegrityError:
         raise HTTPException(409, "This email address is already registered.")
+    except Exception as exc:                                   # noqa: BLE001  (an unhandled 500 reaches the browser as "cannot reach")
+        logging.getLogger("skystack.admin").exception("invite insert failed for %s: %s", email, exc)
+        raise HTTPException(500, f"The user could not be saved ({type(exc).__name__}). Please contact SkyStack.")
     user_id = str(rows[0]["UserId"])
-    emailed = issue_one_time_password(user_id, email, body.display_name.strip(), admin["client_name"])
+    try:
+        emailed = issue_one_time_password(user_id, email, body.display_name.strip(), admin["client_name"])
+    except Exception as exc:                                   # noqa: BLE001  (e.g. Key Vault unreachable / no permission)
+        logging.getLogger("skystack.admin").exception("invite failed for %s: %s", email, exc)
+        db.query("DELETE FROM portal.PortalUser WHERE UserId = ? AND ClientId = ?", (user_id, admin["client_id"]))   # no half-created user
+        raise HTTPException(502, f"The invitation could not be created ({type(exc).__name__}). Nothing was saved - please try again or contact SkyStack.")
     activity.record(admin["client_id"], user_id, admin["email"], "USER_INVITED", f"{email} as {body.role}")
     return {"id": user_id, "emailed": emailed}
 
