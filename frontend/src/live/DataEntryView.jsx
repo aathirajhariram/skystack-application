@@ -187,8 +187,9 @@ export default function DataEntryView({ goUploads, isAdmin }) {
     });
   }
 
+  const aligned = rows.every((r) => r.length === cols.length);   // for one render after switching tables the old rows do not fit the new columns yet
   const filledIdx = rows.map((row, i) => (row.some((v) => v.trim()) ? i : -1)).filter((i) => i >= 0);
-  const localErrors = filledIdx.reduce((n, i) => n + rows[i].filter((v, j) => cellError(cols[j], v)).length, 0);
+  const localErrors = filledIdx.reduce((n, i) => n + rows[i].filter((v, j) => cols[j] && cellError(cols[j], v)).length, 0);
   const serverCount = Object.keys(serverErrors).length;
 
   async function send() {
@@ -289,7 +290,7 @@ export default function DataEntryView({ goUploads, isAdmin }) {
               <th className="grid-no" />
             </tr></thead>
             <tbody>
-              {rows.map((row, r) => {
+              {aligned && rows.map((row, r) => {
                 const active = row.some((v) => v.trim());
                 return (
                   <tr key={r}>
