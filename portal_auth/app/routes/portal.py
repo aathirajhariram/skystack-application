@@ -102,6 +102,8 @@ def entry_release(table: str, force: bool = False, user: dict = Depends(deps.upl
     if held and force and held["UserEmail"].lower() != user["email"].lower():
         activity.record(user["client_id"], user["user_id"], user["email"], "GRID_TAKEOVER",
                         f"{table}: released the lock of {held['UserEmail']}")
+    elif held and held["UserEmail"].lower() == user["email"].lower():          # the person themselves stopped editing
+        activity.record(user["client_id"], user["user_id"], user["email"], "GRID_STOP", f"{table}: stopped editing")
     return {"released": True}
 
 
@@ -184,7 +186,7 @@ def submit_entry(body: EntryBody, user: dict = Depends(deps.upload_user)):
 def entry_history(user: dict = Depends(deps.upload_user)):
     """Who uploaded or entered what, and when (newest first). The table is the text before the first colon."""
     rows = db.query("SELECT TOP 100 Actor, Action, Detail, At FROM portal.ActivityLog "
-                    "WHERE ClientId = ? AND Action IN ('UPLOAD','GRID_SENT','GRID_REJECTED','GRID_TAKEOVER','GRID_LOCK','TABLE_SAVED') "
+                    "WHERE ClientId = ? AND Action IN ('UPLOAD','GRID_SENT','GRID_REJECTED','GRID_TAKEOVER','GRID_LOCK','GRID_STOP','TABLE_SAVED') "
                     "ORDER BY At DESC", (user["client_id"],))
     return [{"who": r["Actor"], "action": r["Action"], "table": (r["Detail"] or "").split(":", 1)[0],
              "detail": (r["Detail"] or "").split(":", 1)[-1].strip(), "at": r["At"].isoformat() + "Z"} for r in rows]
