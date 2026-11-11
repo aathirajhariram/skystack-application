@@ -643,3 +643,20 @@
 .grid-panel .live-row:has(.live-field) > .live-muted {
   padding-bottom: 12px;
 }
+
+/* Clear: destructive, so red outline and parked in the right corner */
+.grid-btn.danger {
+  border-color: transparent;
+  color: #b4474f;
+  background: transparent;
+  font-weight: 500;
+  font-size: 12.5px;
+}
+.grid-btn.danger:hover:not(:disabled) {
+  background: #fdf1f2;
+  border-color: #e8b9bd;
+  color: #b00020;
+}
+.grid-btn.push-right {
+  margin-left: auto;
+}
