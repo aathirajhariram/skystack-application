@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { KeyRound, LayoutDashboard, LogOut, ShieldCheck, Upload, Users } from "lucide-react";
+import { KeyRound, LayoutDashboard, LogOut, ShieldCheck, Table, Upload, Users } from "lucide-react";
 import { useAuth } from "../auth/AuthContext.jsx";
 import AccountView from "./AccountView.jsx";
 import AdminView from "./AdminView.jsx";
 import ChangePasswordForm from "./ChangePasswordForm.jsx";
 import DashboardView from "./DashboardView.jsx";
 import UploadsView from "./UploadsView.jsx";
+import DataEntryView from "./DataEntryView.jsx";
 import "./live.css";
 
 // The signed-in client workspace. Reuses the existing portal look (portal-* classes from styles.css).
@@ -30,13 +31,14 @@ export default function LivePortal({ logo }) {
 
   const tabs = [
     ["Dashboard", LayoutDashboard],
-    ...(user.permissions.upload ? [["Data uploads", Upload]] : []),
+    ...(user.permissions.upload ? [["Data uploads", Upload], ["Data entry", Table]] : []),
     ["Account", KeyRound],
     ...(user.permissions.admin ? [["Admin", Users]] : []),
   ];
   const subtitle = {
     Dashboard: "Your business at a glance, built from your own data.",
     "Data uploads": "Send new data and follow its processing.",
+    "Data entry": "Type or paste data into a table instead of preparing a file.",
     Account: "Your sign-in details and password.",
     Admin: "Manage who can access your workspace.",
   }[tab];
@@ -73,6 +75,7 @@ export default function LivePortal({ logo }) {
           <div className="portal-welcome"><div><h1>{tab}</h1><p>{subtitle}</p></div></div>
           {tab === "Dashboard" && <DashboardView canUpload={user.permissions.upload} goUploads={() => setTab("Data uploads")} />}
           {tab === "Data uploads" && user.permissions.upload && <UploadsView />}
+          {tab === "Data entry" && user.permissions.upload && <DataEntryView goUploads={() => setTab("Data uploads")} isAdmin={!!user.permissions.admin} />}
           {tab === "Account" && <AccountView user={user} />}
           {tab === "Admin" && user.permissions.admin && <AdminView me={user} />}
         </div>
