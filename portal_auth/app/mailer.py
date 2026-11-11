@@ -37,12 +37,14 @@ def _money(amount, currency: str) -> str:
     return f"{currency.upper()} {float(amount):,.2f}"
 
 
-def send_payment_link(email: str, name: str, plan_name: str, amount, currency: str, url: str) -> None:
-    text = (f"Hello {name},\n\nThank you for choosing the SkyStack {plan_name} plan ({_money(amount, currency)} per month).\n\n"
+def send_payment_link(email: str, name: str, plan_name: str, amount, currency: str, url: str, months: int = 1) -> None:
+    """amount = the price of one billing period, which lasts `months` months."""
+    price = f"{_money(amount, currency)} every {months} months" if months > 1 else f"{_money(amount, currency)} per month"
+    text = (f"Hello {name},\n\nThank you for choosing the SkyStack {plan_name} plan ({price}).\n\n"
             f"Pay securely here: {url}\n\nThe link is valid for 24 hours; if it expires, simply submit the subscription form again. "
             "As soon as your payment is confirmed we will email you a one-time password for your workspace.\n\nSkyStack")
     body = (f"<p>Hello {html.escape(name)},</p><p>Thank you for choosing the SkyStack <b>{html.escape(plan_name)}</b> plan "
-            f"({_money(amount, currency)} per month).</p><p><a href=\"{html.escape(url)}\" style=\"background:#246b98;color:#fff;"
+            f"({price}).</p><p><a href=\"{html.escape(url)}\" style=\"background:#246b98;color:#fff;"
             "padding:10px 18px;border-radius:6px;text-decoration:none\">Pay securely</a></p>"
             "<p>The link is valid for 24 hours; if it expires, simply submit the subscription form again. "
             "As soon as your payment is confirmed we will email you a one-time password for your workspace.</p><p>SkyStack</p>")
