@@ -36,7 +36,7 @@ def plans(response: Response):
     if _PLANS_CACHE["data"] is not None and time.time() - _PLANS_CACHE["at"] < 300:
         return _PLANS_CACHE["data"]
     rows = db.query("SELECT * FROM portal.vw_Plan ORDER BY DisplayOrder")
-    data = [{"code": r["PlanCode"], "name": r["Name"], "price": float(r["PriceMonthly"]), "currency": r["Currency"],
+    data = [{"code": r["PlanCode"], "name": r["Name"], "price": float(r["PriceMonthly"]), "months": settings.billing_months, "currency": r["Currency"],
              "tagline": r["Tagline"], "features": json.loads(r["Features"]), "popular": bool(r["IsPopular"])} for r in rows]
     _PLANS_CACHE.update(data=data, at=time.time())
     return data
@@ -87,13 +87,13 @@ def subscribe(body: SubscribeBody, request: Request, bg: BackgroundTasks):
         "A visitor requested a subscription.",
         f"Login e-mail (user id): {email}",
         f"Contact: {body.contact_name.strip()}", f"Company: {body.company_name.strip()}",
-        f"Industry: {body.industry}", f"Plan: {plan['Name']} - {plan['Currency']} {float(plan['PriceMonthly']):,.2f} / month",
+        f"Industry: {body.industry}", f"Plan: {plan['Name']} - {plan['Currency']} {float(plan['PriceMonthly']):,.2f} every {settings.billing_months} months",
         f"Request id: {request_id}",
         "A payment link was sent to the customer automatically. The workspace and one-time password are created only after payment."])
     try:
         checkout = billing.create_checkout(request_id, email, plan)
         db.query("UPDATE portal.SubscriptionRequest SET PaymentRef = ? WHERE RequestId = ?", (checkout["session_id"], request_id))
-        mailer.send_payment_link(email, body.contact_name.strip(), plan["Name"], plan["PriceMonthly"], plan["Currency"], checkout["url"])
+        mailer.send_payment_link(email, body.contact_name.strip(), plan["Name"], plan["PriceMonthly"], plan["Currency"], checkout["url"], settings.billing_months)
     except Exception:                                      # noqa: BLE001
         log.exception("could not create/send payment link for %s", request_id)
         mailer.notify_business("Payment link FAILED - follow up manually", [f"Request {request_id} / {email}: the payment link could not be created or sent."])
