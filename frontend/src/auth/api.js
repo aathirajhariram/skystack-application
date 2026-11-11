@@ -59,6 +59,7 @@ export const uploadFile = (table, file) => {
 };
 
 export const features = () => request("/portal/features");
+export const askAssistant = (messages) => request("/portal/assistant", { method: "POST", json: { messages } });
 export const entryStatus = (source) => request(`/portal/entry/${encodeURIComponent(source)}/lock`);
 export const entryLock = (source) => request(`/portal/entry/${encodeURIComponent(source)}/lock`, { method: "POST", json: {} });
 export const entryRelease = (source, force = false) => request(`/portal/entry/${encodeURIComponent(source)}/release?force=${force}`, { method: "POST", json: {} });
