@@ -6,15 +6,15 @@ from app.config import settings
 
 
 def create_checkout(request_id: str, email: str, plan: dict) -> dict:
-    """Returns {"url": ..., "session_id": ...}. The plan price comes from cfg.Plan (editable by SkyStack in SQL)."""
+    """Returns {"url": ..., "session_id": ...}. The plan price comes from cfg.Plan (price per billing period, editable in SQL); it renews every settings.billing_months months."""
     session = stripe.checkout.Session.create(
         api_key=vaults.developer_secret(settings.stripe_secret_name),
         mode="subscription",
         customer_email=email,
         line_items=[{"quantity": 1, "price_data": {
             "currency": str(plan["Currency"]).lower(),
-            "unit_amount": int(round(float(plan["PriceMonthly"]) * 100)),
-            "recurring": {"interval": "month"},
+            "unit_amount": int(round(float(plan["PriceMonthly"]) * 100)),   # the plan price IS the price of one period
+            "recurring": {"interval": "month", "interval_count": settings.billing_months},
             "product_data": {"name": f"SkyStack {plan['Name']}"}}}],
         metadata={"request_id": request_id},
         success_url=f"{settings.portal_base_url}/login?subscribed=1",
