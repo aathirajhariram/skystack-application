@@ -18,9 +18,9 @@ def _landing():
     return service.get_file_system_client(settings.landing_container)
 
 
-def put_file(client_code: str, source: str, safe_name: str, data: bytes) -> str:
+def put_file(client_code: str, source: str, safe_name: str, data: bytes, stamp: bool = True) -> str:
     """Creates the folder, creates the file, appends the bytes and flushes - each step explicit, so a failure names its step."""
-    stamped = f"{datetime.utcnow():%Y%m%dT%H%M%S}_{safe_name}"
+    stamped = f"{datetime.utcnow():%Y%m%dT%H%M%S}_{safe_name}" if stamp else safe_name   # stamp=False: the caller already named the file
     folder = f"{client_code}/{source}"
     path = f"{folder}/{stamped}"
     fs = _landing()
