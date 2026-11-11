@@ -98,7 +98,7 @@ export default function DataEntryView({ goUploads, isAdmin }) {
     try {
       const st = await entryLock(source);
       setLock(st);
-      if (!st.mine) setMsg({ ok: false, text: `${st.holder?.name || "Someone"} is editing this data type right now.` });
+      if (!st.mine) setMsg({ ok: false, text: `${st.holder?.name || "Someone"} is editing this table right now.` });
     } catch (e) { setMsg({ ok: false, text: e.message }); }
   }
   async function stopEditing() {
@@ -181,10 +181,10 @@ export default function DataEntryView({ goUploads, isAdmin }) {
   }
 
   const banner = lock.mine
-    ? <p className="grid-banner mine">You are editing this data type. Others must wait until you send or stop. The slot is renewed while this page is open.</p>
+    ? <p className="grid-banner mine">You are editing this table. Others must wait until you send or stop. The slot is renewed while this page is open.</p>
     : lock.free
-      ? <p className="grid-banner">Press <b>Start editing</b> to reserve this data type. Only one person can enter data at a time.</p>
-      : <p className="grid-banner other"><b>{lock.holder?.name}</b> is entering data for this data type
+      ? <p className="grid-banner">Press <b>Start editing</b> to reserve this table. Only one person can enter data at a time.</p>
+      : <p className="grid-banner other"><b>{lock.holder?.name}</b> is entering data for this table
           {lock.holder?.since && <> (since {new Date(lock.holder.since).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })})</>}.
           Please wait - this page updates by itself when it is free.</p>;
 
@@ -194,13 +194,13 @@ export default function DataEntryView({ goUploads, isAdmin }) {
         <div className="portal-panel-head"><div>
           <span className="portal-panel-kicker">PRO AND ELITE</span>
           <h2>Enter data in a table</h2>
-          <p>Type or paste rows from Excel. Every column is checked against its data type before anything is sent. Rows with an existing key update that record.</p>
+          <p>Type or paste rows from Excel. Every column is checked against its column type before anything is sent. Rows with an existing key update that record.</p>
         </div></div>
         {msg && <p className={msg.ok ? "live-ok" : "live-error"}>{msg.text}{msg.ok && <> <button className="link-btn" onClick={goUploads}>View status</button></>}</p>}
         <div className="live-row">
-          <label className="live-field">Data type
+          <label className="live-field">Table
             <select value={source} onChange={(e) => setSource(e.target.value)} disabled={busy || lock.mine}>
-              {sources.map((s) => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
+              {sources.map((s) => <option key={s} value={s}>{s.replace(/_/g, " ").replace(/^\w/, (ch) => ch.toUpperCase())}</option>)}
             </select>
           </label>
           {!lock.mine && lock.free && <button className="button button-primary" onClick={startEditing}>Start editing</button>}
