@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 from app import activity, db, deps
 from app.config import settings
-from app.services import client_tables as ct, dashboard, entry, storage, visibility
+from app.services import assistant, client_tables as ct, dashboard, entry, storage, visibility
 
 router = APIRouter(prefix="/portal", tags=["portal"])
 
@@ -72,7 +72,7 @@ def _entry_table(user: dict, name: str) -> dict:
 
 @router.get("/features")
 def features(user: dict = Depends(deps.active_user)):
-    return {"data_entry": _grid_allowed(user)}
+    return {"data_entry": _grid_allowed(user), "assistant": _grid_allowed(user)}      # assistant: Pro and Elite
 
 
 @router.get("/entry/{table}/lock")
@@ -190,6 +190,27 @@ def entry_history(user: dict = Depends(deps.upload_user)):
                     "ORDER BY At DESC", (user["client_id"],))
     return [{"who": r["Actor"], "action": r["Action"], "table": (r["Detail"] or "").split(":", 1)[0],
              "detail": (r["Detail"] or "").split(":", 1)[-1].strip(), "at": r["At"].isoformat() + "Z"} for r in rows]
+
+
+# ---- the assistant (Claude, grounded in this client's own workspace) ------------------------------------------------
+class ChatMessage(BaseModel):
+    role: str = Field(pattern="^(user|assistant)$")
+    content: str = Field(min_length=1, max_length=4000)
+
+
+class AssistantBody(BaseModel):
+    messages: list[ChatMessage] = Field(min_length=1, max_length=40)
+
+
+@router.post("/assistant", dependencies=[Depends(deps.require_csrf_header)])
+def ask_assistant(body: AssistantBody, user: dict = Depends(deps.active_user)):
+    if not _grid_allowed(user):
+        raise HTTPException(403, "not_in_plan")
+    if assistant.asked_last_hour(user) >= settings.assistant_per_user_per_hour:
+        raise HTTPException(429, "You have asked a lot of questions in the last hour. Please try again a little later.")
+    reply = assistant.ask(user, [m.model_dump() for m in body.messages])
+    activity.record(user["client_id"], user["user_id"], user["email"], "ASSISTANT_ASK", "")   # who and when only, never the text
+    return {"reply": reply}
 
 
 def _friendly(status: str, message: str) -> str:
