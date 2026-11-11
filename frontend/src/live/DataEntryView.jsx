@@ -224,6 +224,10 @@ export default function DataEntryView({ goUploads, isAdmin }) {
     });
   }
 
+  const clearSheet = () => {
+    if (filledIdx.length && !window.confirm(`Remove the ${filledIdx.length} row${filledIdx.length > 1 ? "s" : ""} you typed? This cannot be undone.`)) return;
+    resetSheet(cols.length);
+  };
   const aligned = rows.every((r) => r.length === cols.length);   // for one render after switching tables the old rows do not fit yet
   const filledIdx = rows.map((row, i) => (row.some((v) => v.trim()) ? i : -1)).filter((i) => i >= 0);
   const localErrors = filledIdx.reduce((n, i) => n + rows[i].filter((v, j) => cols[j] && cellError(cols[j], v)).length, 0);
@@ -377,10 +381,10 @@ export default function DataEntryView({ goUploads, isAdmin }) {
         <div className="live-row">
           <button className="grid-btn" onClick={() => addRows(5)} disabled={!canEdit}>+ Add 5 rows</button>
           <button className="grid-btn" onClick={addCol} disabled={!canEdit || defs.length >= 60}>+ Add column</button>
-          <button className="grid-btn" onClick={() => resetSheet(cols.length)} disabled={!canEdit}>Clear</button>
           <button className="grid-btn" onClick={save} disabled={!canEdit}>{isNew ? "Save table" : "Save columns"}</button>
           <button className="grid-btn primary" onClick={send} disabled={!canEdit}>{busy ? "Sending…" : "Send data"}</button>
           {serverCount > 0 && <span className="live-error">{serverCount} problem{serverCount > 1 ? "s" : ""} to fix</span>}
+          <button className="grid-btn danger push-right" onClick={clearSheet} disabled={!canEdit}>Clear all rows</button>
         </div>
         <p className="live-muted">Dates use the format chosen for the column · up to 5,000 rows per send.</p>
       </section>
