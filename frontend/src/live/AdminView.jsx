@@ -69,8 +69,12 @@ export default function AdminView({ me }) {
 
   const act = async (fn, okText) => {
     setNotice("");
-    try { const r = await fn(); setNotice(typeof okText === "function" ? okText(r) : okText); await load(); }
-    catch (err) { if (err.code === "elevation_required") setLocked(true); else setNotice(err.message); }
+    let ok = false;
+    try { const r = await fn(); setNotice(typeof okText === "function" ? okText(r) : okText); ok = true; }
+    catch (err) { if (err.code === "elevation_required") setLocked(true); else setNotice(err.message || "Something went wrong. Please try again."); }
+    await load().catch(() => {});                       // always refresh, so the list matches the server
+    window.scrollTo({ top: 0, behavior: "smooth" });    // the message sits at the top of the page
+    return ok;
   };
 
   if (locked) return <Gate onUnlocked={load} />;
@@ -116,7 +120,7 @@ export default function AdminView({ me }) {
         <form className="live-form live-inline" onSubmit={(e) => {
           e.preventDefault();
           act(() => inviteUser(form.email, form.name, form.role), (r) => r.emailed ? "Invitation sent with a one-time password." : "User created, but the email could not be sent. Use “Reset password” to try again.")
-            .then(() => setForm({ email: "", name: "", role: "viewer" }));
+            .then((ok) => { if (ok) setForm({ email: "", name: "", role: "viewer" }); });   // keep what was typed if it failed
         }}>
           <label>Name<input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></label>
           <label>Work email<input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required /></label>
