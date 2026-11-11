@@ -1,6 +1,7 @@
 import csv
 import io
 import re
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 from fastapi.responses import JSONResponse
@@ -8,7 +9,7 @@ from pydantic import BaseModel, Field
 
 from app import activity, db, deps
 from app.config import settings
-from app.services import dashboard, entry, storage, visibility
+from app.services import dashboard, entry, storage, tables, visibility
 
 router = APIRouter(prefix="/portal", tags=["portal"])
 
@@ -65,10 +66,14 @@ GRID_PLANS = {"pro", "elite"}
 GRID_MAX_ROWS = 5000
 
 
+def _client_plan(user: dict):
+    row = db.query("SELECT PlanCode FROM cfg.Client WHERE ClientId = ?", (user["client_id"],))
+    return row[0]["PlanCode"] if row else None
+
+
 def _grid_allowed(user: dict) -> bool:
     """Pro and Elite. A client with no plan (created by staff in the Ops console) is allowed too."""
-    row = db.query("SELECT PlanCode FROM cfg.Client WHERE ClientId = ?", (user["client_id"],))
-    plan = (row[0]["PlanCode"] if row else None)
+    plan = _client_plan(user)
     return plan is None or str(plan).lower() in GRID_PLANS
 
 
@@ -157,10 +162,62 @@ def submit_grid(source: str, body: GridBody, user: dict = Depends(deps.upload_us
     data = buf.getvalue().encode("utf-8")
     if len(data) > settings.max_upload_mb * 1024 * 1024:
         raise HTTPException(413, f"The data is larger than {settings.max_upload_mb} MB.")
-    stored = storage.put_file(user["client_code"], source, f"entry_by_{str(user['user_id'])[:8]}.csv", data)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")        # file name = table name + date + time (UTC)
+    stored = storage.put_file(user["client_code"], source, f"{source}_{stamp}.csv", data, stamp=False)
     activity.record(user["client_id"], user["user_id"], user["email"], "GRID_SENT", f"{source}: {len(rows)} rows -> {stored}")
     entry.release(user["client_id"], source, user["user_id"])   # slot is free for the next person
     return {"uploaded": stored, "source": source, "rows": len(rows)}
+
+
+MANUAL_FOLDER = "manual_entry"          # landing/<client>/manual_entry/<table>_<date>_<time>.csv
+
+
+class ColumnDef(BaseModel):
+    name: str = Field(..., max_length=80)
+    type: str = "text"                    # text | whole | decimal | date | datetime | yesno
+    decimals: int = 4
+    date_format: str | None = None
+
+
+class CustomGrid(BaseModel):
+    name: str = Field(..., max_length=60)
+    columns: list[ColumnDef] = Field(..., max_length=tables.MAX_COLUMNS)
+    rows: list[list[str]] = Field(..., max_length=GRID_MAX_ROWS)
+
+
+@router.post("/entry-custom", dependencies=[Depends(deps.require_csrf_header)])
+def submit_custom(body: CustomGrid, user: dict = Depends(deps.upload_user)):
+    """The client's own table (name + columns typed in the browser): checked by data type, then delivered as one CSV."""
+    if not _grid_allowed(user):
+        raise HTTPException(403, "plan_required")
+    name = tables.slug(body.name)
+    if len(name) < 2:
+        raise HTTPException(400, "Give the table a name of at least 2 letters or numbers.")
+    mapping = tables.build_mapping([c.model_dump() for c in body.columns], 0, allow_key=False)
+    cols = [{"name": m["source_col"], "type": m["dtype"], "date_format": m["fmt"], "key": False, "required": False} for m in mapping]
+    rows = [[(c or "").strip() for c in r] for r in body.rows]
+    rows = [r for r in rows if any(r)]
+    if not rows:
+        raise HTTPException(400, "There is no data to send yet.")
+    if any(len(r) != len(cols) for r in rows):
+        raise HTTPException(400, "The rows do not match the columns of the table.")
+    errors = entry.validate(cols, rows)
+    if errors:
+        activity.record(user["client_id"], user["user_id"], user["email"], "GRID_REJECTED",
+                        f"{name} (own table): {len(errors)} validation problem(s) in {len(rows)} rows")
+        return JSONResponse(status_code=422, content={"detail": "validation_failed", "errors": errors})
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow([c["name"] for c in cols])
+    w.writerows(rows)
+    data = buf.getvalue().encode("utf-8")
+    if len(data) > settings.max_upload_mb * 1024 * 1024:
+        raise HTTPException(413, f"The data is larger than {settings.max_upload_mb} MB.")
+    filename = f"{name}_{datetime.now(timezone.utc):%Y%m%d_%H%M%S}.csv"
+    stored = storage.put_file(user["client_code"], MANUAL_FOLDER, filename, data, stamp=False)
+    activity.record(user["client_id"], user["user_id"], user["email"], "GRID_SENT",
+                    f"{name} (own table): {len(rows)} rows, {len(cols)} columns -> {stored}")
+    return {"uploaded": stored, "table": name, "rows": len(rows)}
 
 
 @router.get("/entry-history")
