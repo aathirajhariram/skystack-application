@@ -520,3 +520,69 @@
     max-height: 60vh;
   }
 }
+
+/* ---- table designer (create a table / add columns) ---- */
+.designer input[type="text"],
+.designer input[type="number"] {
+  width: 100%;
+  min-width: 150px;
+  border: 1px solid var(--line, #d9e1ea);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  background: #fff;
+}
+.designer input[type="number"] {
+  min-width: 0;
+  width: 64px;
+}
+.designer input:focus,
+.designer select:focus {
+  outline: 2px solid #236b9b;
+  outline-offset: -1px;
+}
+.designer .live-table td {
+  vertical-align: middle;
+}
+.designer-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted, #5f7080);
+}
+.designer > .subtle-action {
+  margin-top: 10px;
+}
+.designer-name {
+  max-width: 420px;
+}
+.designer .designer-inline input[type="number"] {
+  width: 64px;
+  min-width: 0;
+  flex: 0 0 64px;
+  padding: 6px 8px;
+}
+
+/* ---- "My own table": editable column headings ---- */
+.grid-custom-head {
+  min-width: 170px;
+}
+.grid-custom-head input,
+.grid-custom-head select {
+  display: block;
+  width: 100%;
+  margin: 2px 0;
+  border: 1px solid var(--line, #d9e1ea);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 12px;
+  background: #fff;
+}
+.grid-custom-head input {
+  font-weight: 600;
+}
+.grid-custom-head .link-btn {
+  float: right;
+}
