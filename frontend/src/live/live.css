@@ -1,4 +1,4 @@
-/* Signed-in workspace additions (the shell itself reuses the portal-* classes in styles.css) */
+/* Signed-in workspace additions (the shell itself reuses the portal-* classes in styles.css) */ 
 .live-center {
   min-height: 100vh;
   display: grid;
