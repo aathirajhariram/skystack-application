@@ -34,6 +34,12 @@ class Settings(BaseSettings):
     max_upload_mb: int = 50
     allowed_extensions: List[str] = [".csv", ".xlsx", ".json", ".txt"]
 
+    # ---- In-portal assistant (Claude) ----
+    anthropic_secret_name: str = "anthropic-api-key"          # secret in the DEVELOPERS vault
+    assistant_model: str = "claude-sonnet-5-5"
+    assistant_max_tokens: int = 700
+    assistant_per_user_per_hour: int = 30
+
     # ---- Subscriptions & payment ----
     business_email: str = ""                       # SkyStack inbox that is notified of requests, payments, failures
     stripe_secret_name: str = "stripe-secret-key"            # secret names in the DEVELOPERS vault
