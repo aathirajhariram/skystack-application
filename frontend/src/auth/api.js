@@ -26,6 +26,7 @@ async function request(path, { method = "GET", json, form } = {}) {
     const err = new Error(code);
     err.status = res.status;
     err.code = code;
+    err.data = data;                                   // full reply, e.g. the list of validation problems
     if (res.status === 401 && path !== "/auth/login") onUnauthorized();
     throw err;
   }
@@ -56,6 +57,14 @@ export const uploadFile = (source, file) => {
   form.append("file", file);
   return request(`/portal/upload/${encodeURIComponent(source)}`, { method: "POST", form });
 };
+
+export const features = () => request("/portal/features");
+export const sourceColumns = (source) => request(`/portal/sources/${encodeURIComponent(source)}/columns`);
+export const submitGrid = (source, rows) => request(`/portal/entry/${encodeURIComponent(source)}`, { method: "POST", json: { rows } });
+export const entryStatus = (source) => request(`/portal/entry/${encodeURIComponent(source)}/lock`);
+export const entryLock = (source) => request(`/portal/entry/${encodeURIComponent(source)}/lock`, { method: "POST", json: {} });
+export const entryRelease = (source, force = false) => request(`/portal/entry/${encodeURIComponent(source)}/release?force=${force}`, { method: "POST", json: {} });
+export const entryHistory = () => request("/portal/entry-history");
 
 // ---- public (no sign-in) ----
 export const publicPlans = () => request("/public/plans");
