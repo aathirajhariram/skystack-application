@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     assistant_per_user_per_hour: int = 30
 
     # ---- Subscriptions & payment ----
+    billing_months: int = 3                                   # length of one billing period; cfg.Plan.PriceMonthly holds the price PER PERIOD (e.g. 99 = EUR 99 every 3 months)
     business_email: str = ""                       # SkyStack inbox that is notified of requests, payments, failures
     stripe_secret_name: str = "stripe-secret-key"            # secret names in the DEVELOPERS vault
     stripe_webhook_secret_name: str = "stripe-webhook-secret"
